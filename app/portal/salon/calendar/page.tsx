@@ -408,7 +408,7 @@ export default function SalonCalendarPage() {
                                       {booking.reservedTimes?.length ? booking.reservedTimes.join(", ") : booking.time}
                                     </div>
                                     <div style={{ fontWeight: 900, fontSize: 13 }}>
-                                      {fmtMoney(booking.totalEuro, salon.currency)}
+                                      {fmtMoney(Number(booking.totalEuro || 0))}
                                     </div>
                                   </div>
                                 </div>
