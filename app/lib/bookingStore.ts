@@ -10,6 +10,7 @@ export type BookingStatus =
   | "no_show";
 
 export type PaymentMethod = "online" | "salon";
+export type Demand = "quiet" | "normal" | "busy";
 
 export type Booking = {
   id: string;
