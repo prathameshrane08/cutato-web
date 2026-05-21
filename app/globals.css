@@ -1,26 +1,163 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f6f6f7;
+  --foreground: #111111;
+
+  --primary: #ff355d;
+  --primary-hover: #ff1f4c;
+
+  --card: #ffffff;
+  --border: #e7e7ea;
+
+  --muted: #6f6f73;
+
+  --radius: 28px;
+
+  --shadow-soft:
+    0 10px 30px rgba(0, 0, 0, 0.05);
+
+  --shadow-hover:
+    0 16px 40px rgba(0, 0, 0, 0.08);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  box-sizing: border-box;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-manrope), sans-serif;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: var(--primary);
+  color: white;
+}
+
+/* ---------- TYPOGRAPHY ---------- */
+
+.hero-title {
+  @apply text-6xl md:text-7xl font-extrabold tracking-tight leading-[0.95];
+}
+
+.page-title {
+  @apply text-5xl font-bold tracking-tight;
+}
+
+.section-title {
+  @apply text-4xl md:text-5xl font-bold tracking-tight;
+}
+
+.card-title {
+  @apply text-2xl font-bold;
+}
+
+.body-text {
+  @apply text-lg leading-relaxed;
+}
+
+.muted-text {
+  color: var(--muted);
+}
+
+/* ---------- LAYOUT ---------- */
+
+.section-spacing {
+  @apply py-24;
+}
+
+.container-width {
+  @apply max-w-7xl mx-auto px-6 md:px-8;
+}
+
+/* ---------- CARD ---------- */
+
+.cutato-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease,
+    border-color 0.3s ease;
+}
+
+.cutato-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-hover);
+}
+
+/* ---------- BUTTONS ---------- */
+
+.btn-primary {
+  @apply inline-flex items-center justify-center;
+  @apply px-7 py-4;
+  @apply text-white font-semibold;
+  @apply rounded-full;
+
+  background: var(--primary);
+
+  transition:
+    transform 0.25s ease,
+    background 0.25s ease;
+}
+
+.btn-primary:hover {
+  background: var(--primary-hover);
+  transform: translateY(-2px);
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center;
+  @apply px-7 py-4;
+  @apply rounded-full;
+  @apply font-semibold;
+
+  background: white;
+  border: 1px solid var(--border);
+
+  transition:
+    transform 0.25s ease,
+    background 0.25s ease;
+}
+
+.btn-secondary:hover {
+  background: #f1f1f2;
+  transform: translateY(-2px);
+}
+
+/* ---------- INPUT ---------- */
+
+.cutato-input {
+  @apply w-full px-5 py-4;
+  @apply rounded-2xl;
+
+  background: white;
+  border: 1px solid var(--border);
+
+  transition: border-color 0.2s ease;
+}
+
+.cutato-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+/* ---------- GLASS ---------- */
+
+.glass {
+  backdrop-filter: blur(20px);
+  background: rgba(255,255,255,0.65);
 }
