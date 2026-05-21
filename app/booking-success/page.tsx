@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   CalendarPlus,
@@ -12,10 +13,8 @@ import {
   Scissors,
   ShieldCheck,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
 
 import WebShell from "@/app/Components/WebShell";
-import MapCard from "@/app/Components/MapCard";
 import { downloadICS } from "@/app/lib/ics";
 import type { Booking } from "@/app/lib/bookingStore";
 import type { CustomerBarber } from "@/app/lib/barbersStore";
@@ -24,15 +23,13 @@ import { getBarberByIdFromSupabase } from "@/app/lib/barbersSupabase";
 import { readSalonSettings } from "@/app/lib/salonSettingsStore";
 import { fmtMoney, statusLabel } from "@/app/lib/formatters";
 
-type PaymentMethod = "online" | "salon";
-
 function toLocalStart(date: string, time: string) {
   return new Date(`${date}T${time}:00`);
 }
 
-function paymentLabel(p?: PaymentMethod) {
-  if (p === "online") return "Online";
-  if (p === "salon") return "At salon";
+function paymentLabel(p?: string) {
+  if (p === "online") return "Paid online";
+  if (p === "salon") return "Pay at salon";
   return "—";
 }
 
@@ -41,10 +38,19 @@ function normalizeMoney(b: Booking) {
   const service = Number(b.servicePriceEuro || 0);
   const tip = Number(b.tipEuro || 0);
   const total = Number(b.totalEuro || service + tip || 0);
+
   return { base, service, tip, total };
 }
 
 export default function BookingSuccessPage() {
+  return (
+    <Suspense fallback={<BookingSuccessLoading />}>
+      <BookingSuccessInner />
+    </Suspense>
+  );
+}
+
+function BookingSuccessInner() {
   const sp = useSearchParams();
   const router = useRouter();
   const salon = useMemo(() => readSalonSettings(), []);
@@ -123,7 +129,7 @@ export default function BookingSuccessPage() {
     if (!booking) return;
 
     const start = toLocalStart(booking.date, booking.time);
-    const end = new Date(start.getTime() + booking.durationMin * 60_000);
+    const end = new Date(start.getTime() + Number(booking.durationMin || 0) * 60_000);
 
     downloadICS({
       filename: `cutato-${booking.barberName}-${booking.date}-${booking.time}.ics`,
@@ -144,15 +150,7 @@ export default function BookingSuccessPage() {
   }
 
   if (loading) {
-    return (
-      <WebShell title="Booking confirmed" subtitle="Loading booking...">
-        <div className="mx-auto max-w-3xl">
-          <div className="theme-card" style={{ padding: 18 }}>
-            <div style={{ fontWeight: 900 }}>Loading booking...</div>
-          </div>
-        </div>
-      </WebShell>
-    );
+    return <BookingSuccessLoading />;
   }
 
   if (!bookingId || !booking) {
@@ -165,6 +163,7 @@ export default function BookingSuccessPage() {
           <h2 className="text-2xl font-black">
             {!bookingId ? "Missing bookingId" : "Booking not found"}
           </h2>
+
           <p className="mt-2 text-neutral-500">
             Go to your bookings page to check your appointment history.
           </p>
@@ -242,9 +241,11 @@ export default function BookingSuccessPage() {
                 <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">
                   Appointment details
                 </p>
+
                 <h2 className="mt-3 text-3xl font-black tracking-[-0.04em]">
                   {booking.barberName}
                 </h2>
+
                 <p className="mt-2 text-sm text-neutral-500">
                   Manage, cancel or book again from your dashboard.
                 </p>
@@ -265,10 +266,7 @@ export default function BookingSuccessPage() {
                 label="Reserved"
                 value={booking.reservedTimes?.length ? booking.reservedTimes.join(", ") : booking.time}
               />
-              <Row
-                label="Payment"
-                value={booking.paymentMethod === "online" ? "Paid online" : "Pay at salon"}
-              />
+              <Row label="Payment" value={paymentLabel(booking.paymentMethod)} />
             </div>
 
             <div className="my-7 h-px bg-black/10" />
@@ -313,40 +311,32 @@ export default function BookingSuccessPage() {
           </section>
 
           <aside className="grid h-fit gap-4">
-            <MapCard
-              title="Directions"
-              name={booking.barberName}
-              address={barber?.address ?? ""}
+            <MapCard title="Directions" name={booking.barberName} address={barber?.address ?? ""} />
+
+            <InfoBox
+              icon={<ShieldCheck />}
+              title="Cancellation policy"
+              text="Free cancellation up to 2 hours before your appointment."
             />
 
-            <div className="rounded-[30px] border border-black/10 bg-white p-6 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="rounded-2xl bg-[#ff355d]/10 p-3 text-[#ff355d]">
-                  <ShieldCheck />
-                </div>
-                <div>
-                  <h3 className="font-black">Cancellation policy</h3>
-                  <p className="mt-1 text-sm leading-6 text-neutral-500">
-                    Free cancellation up to 2 hours before your appointment.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-[30px] border border-black/10 bg-white p-6 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="rounded-2xl bg-[#ff355d]/10 p-3 text-[#ff355d]">
-                  <MapPin />
-                </div>
-                <div>
-                  <h3 className="font-black">Arrive on time</h3>
-                  <p className="mt-1 text-sm leading-6 text-neutral-500">
-                    Please arrive 5 minutes before your appointment.
-                  </p>
-                </div>
-              </div>
-            </div>
+            <InfoBox
+              icon={<MapPin />}
+              title="Arrive on time"
+              text="Please arrive 5 minutes before your appointment."
+            />
           </aside>
+        </div>
+      </div>
+    </WebShell>
+  );
+}
+
+function BookingSuccessLoading() {
+  return (
+    <WebShell title="Booking confirmed" subtitle="Loading your booking...">
+      <div className="mx-auto max-w-3xl">
+        <div className="theme-card" style={{ padding: 18 }}>
+          <div style={{ fontWeight: 900 }}>Loading booking...</div>
         </div>
       </div>
     </WebShell>
@@ -363,11 +353,11 @@ function HeroRow({
   value: string;
 }) {
   return (
-    <div className="mb-4 flex items-center gap-3">
-      <div className="rounded-2xl bg-white/10 p-2 text-[#ff355d]">{icon}</div>
+    <div className="mb-4 flex items-start gap-3">
+      <div className="mt-0.5 text-[#ff355d]">{icon}</div>
       <div>
-        <p className="text-xs font-bold text-white/40">{label}</p>
-        <p className="text-sm font-black">{value}</p>
+        <p className="text-xs font-bold text-white/50">{label}</p>
+        <p className="mt-1 text-sm font-black text-white">{value}</p>
       </div>
     </div>
   );
@@ -377,7 +367,72 @@ function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-4">
       <span className="text-sm font-bold text-neutral-500">{label}</span>
-      <span className="max-w-[260px] text-right text-sm font-black">{value}</span>
+      <span className="max-w-[220px] text-right text-sm font-black">{value}</span>
+    </div>
+  );
+}
+
+function InfoBox({
+  icon,
+  title,
+  text,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  text: string;
+}) {
+  return (
+    <div className="rounded-[30px] border border-black/10 bg-white p-6 shadow-sm">
+      <div className="flex items-center gap-3">
+        <div className="rounded-2xl bg-[#ff355d]/10 p-3 text-[#ff355d]">
+          {icon}
+        </div>
+
+        <div>
+          <h3 className="font-black">{title}</h3>
+          <p className="mt-1 text-sm leading-6 text-neutral-500">{text}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MapCard({
+  title,
+  name,
+  address,
+}: {
+  title: string;
+  name: string;
+  address: string;
+}) {
+  const mapsHref = address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}`;
+
+  return (
+    <div className="rounded-[30px] border border-black/10 bg-white p-6 shadow-sm">
+      <div className="flex items-center gap-3">
+        <div className="rounded-2xl bg-[#ff355d]/10 p-3 text-[#ff355d]">
+          <MapPin />
+        </div>
+
+        <div>
+          <h3 className="font-black">{title}</h3>
+          <p className="mt-1 text-sm leading-6 text-neutral-500">
+            {address || "Open map directions to the barber."}
+          </p>
+        </div>
+      </div>
+
+      <a
+        href={mapsHref}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-5 inline-flex rounded-full bg-[#ff355d] px-5 py-3 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25"
+      >
+        Open directions
+      </a>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   CalendarCheck,
@@ -23,6 +23,14 @@ function safeNext(next: string | null) {
 }
 
 export default function SignupPage() {
+  return (
+    <Suspense fallback={<SignupLoading />}>
+      <SignupPageInner />
+    </Suspense>
+  );
+}
+
+function SignupPageInner() {
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -207,6 +215,16 @@ export default function SignupPage() {
             </div>
           </form>
         </section>
+      </div>
+    </WebShell>
+  );
+}
+
+function SignupLoading() {
+  return (
+    <WebShell title="Create account" subtitle="Loading signup page...">
+      <div className="mx-auto max-w-3xl rounded-[32px] border border-black/10 bg-white p-8 shadow-sm">
+        <div className="font-black">Loading signup page...</div>
       </div>
     </WebShell>
   );
