@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   CalendarDays,
@@ -94,6 +94,14 @@ function makeLocalBookingId() {
 }
 
 export default function BookPage() {
+  return (
+    <Suspense fallback={<BookLoading />}>
+      <BookPageInner />
+    </Suspense>
+  );
+}
+
+function BookPageInner() {
   const params = useSearchParams();
 
   const barberId = params.get("barberId") || "";
@@ -285,135 +293,135 @@ export default function BookPage() {
   }
 
   async function handleConfirm() {
-  if (!currentUser?.email) {
-    goToLogin();
-    return;
-  }
-
-  if (!barber || !service) {
-    alert("Please select a barber and service.");
-    return;
-  }
-
-  if (!time) {
-    alert("Please select a time slot.");
-    setStep(2);
-    return;
-  }
-
-  if (!slots.includes(time)) {
-    alert("That slot is no longer available. Please choose another time.");
-    setStep(2);
-    return;
-  }
-
-  const paymentCheck = validatePayment();
-  if (paymentCheck !== true) {
-    alert(paymentCheck);
-    return;
-  }
-
-  try {
-    setIsSubmitting(true);
-
-    const latestReserved = await getReservedTimesForBarber(barber.id, date);
-    const latestTaken = new Set(latestReserved);
-
-    if (reservedTimes.some((t) => latestTaken.has(t))) {
-      alert("That slot was just booked by someone else. Please choose another time.");
-      setReservedFromDb(latestReserved);
-      setTime("");
-      setStep(2);
-      setIsSubmitting(false);
-      return;
-    }
-
-    const { data } = await getCurrentUser();
-    const authUser = data.user;
-
-    if (!authUser?.id || !authUser.email) {
-      setIsSubmitting(false);
+    if (!currentUser?.email) {
       goToLogin();
       return;
     }
 
-    const bookingId = makeLocalBookingId();
+    if (!barber || !service) {
+      alert("Please select a barber and service.");
+      return;
+    }
 
-    const aiHairRaw = sessionStorage.getItem("cutato_ai_hair_reference");
-    const aiHair = aiHairRaw ? JSON.parse(aiHairRaw) : null;
+    if (!time) {
+      alert("Please select a time slot.");
+      setStep(2);
+      return;
+    }
 
-    const bookingPayload = {
-      id: bookingId,
-      createdAt: new Date().toISOString(),
+    if (!slots.includes(time)) {
+      alert("That slot is no longer available. Please choose another time.");
+      setStep(2);
+      return;
+    }
 
-      barberId: barber.id,
-      barberName: barber.name,
+    const paymentCheck = validatePayment();
+    if (paymentCheck !== true) {
+      alert(paymentCheck);
+      return;
+    }
 
-      serviceId: service.id,
-      serviceName: service.name,
-      durationMin: service.durationMin,
+    try {
+      setIsSubmitting(true);
 
-      date,
-      time,
-      reservedTimes,
+      const latestReserved = await getReservedTimesForBarber(barber.id, date);
+      const latestTaken = new Set(latestReserved);
 
-      demand: selectedDemand,
-
-      basePriceEuro: Number(service.basePriceEuro || 0),
-      servicePriceEuro: Number(finalServicePrice || 0),
-      tipEuro: 0,
-      totalEuro: Number(finalServicePrice || 0),
-
-      paymentMethod,
-      userEmail: authUser.email,
-      userId: authUser.id,
-
-      status: "pending",
-
-      assignedBarberId: barber.id,
-
-      referenceImage: aiHair?.image,
-      haircutBrief: aiHair?.barberBrief,
-      aiStyle: aiHair?.style,
-    } as Booking & { userId: string };
-
-    await createBookingInSupabase(bookingPayload);
-
-    sessionStorage.removeItem("cutato_ai_hair_reference");
-
-    if (paymentMethod === "online") {
-      const stripeRes = await fetch("/api/stripe/checkout", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          serviceName: service.name,
-          amountEuro: finalServicePrice,
-          barberName: barber.name,
-          bookingId,
-          customerEmail: authUser.email,
-        }),
-      });
-
-      const stripeData = await stripeRes.json();
-
-      if (!stripeRes.ok || !stripeData.url) {
-        alert(stripeData.error || "Stripe checkout failed.");
+      if (reservedTimes.some((t) => latestTaken.has(t))) {
+        alert("That slot was just booked by someone else. Please choose another time.");
+        setReservedFromDb(latestReserved);
+        setTime("");
+        setStep(2);
         setIsSubmitting(false);
         return;
       }
 
-      window.location.href = stripeData.url;
-      return;
-    }
+      const { data } = await getCurrentUser();
+      const authUser = data.user;
 
-    window.location.href = `/booking-success?bookingId=${encodeURIComponent(bookingId)}`;
-  } catch (err) {
-    setIsSubmitting(false);
-    alert(err instanceof Error ? err.message : "Could not complete booking.");
+      if (!authUser?.id || !authUser.email) {
+        setIsSubmitting(false);
+        goToLogin();
+        return;
+      }
+
+      const bookingId = makeLocalBookingId();
+
+      const aiHairRaw = sessionStorage.getItem("cutato_ai_hair_reference");
+      const aiHair = aiHairRaw ? JSON.parse(aiHairRaw) : null;
+
+      const bookingPayload = {
+        id: bookingId,
+        createdAt: new Date().toISOString(),
+
+        barberId: barber.id,
+        barberName: barber.name,
+
+        serviceId: service.id,
+        serviceName: service.name,
+        durationMin: service.durationMin,
+
+        date,
+        time,
+        reservedTimes,
+
+        demand: selectedDemand,
+
+        basePriceEuro: Number(service.basePriceEuro || 0),
+        servicePriceEuro: Number(finalServicePrice || 0),
+        tipEuro: 0,
+        totalEuro: Number(finalServicePrice || 0),
+
+        paymentMethod,
+        userEmail: authUser.email,
+        userId: authUser.id,
+
+        status: "pending",
+
+        assignedBarberId: barber.id,
+
+        referenceImage: aiHair?.image,
+        haircutBrief: aiHair?.barberBrief,
+        aiStyle: aiHair?.style,
+      } as Booking & { userId: string };
+
+      await createBookingInSupabase(bookingPayload);
+
+      sessionStorage.removeItem("cutato_ai_hair_reference");
+
+      if (paymentMethod === "online") {
+        const stripeRes = await fetch("/api/stripe/checkout", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            serviceName: service.name,
+            amountEuro: finalServicePrice,
+            barberName: barber.name,
+            bookingId,
+            customerEmail: authUser.email,
+          }),
+        });
+
+        const stripeData = await stripeRes.json();
+
+        if (!stripeRes.ok || !stripeData.url) {
+          alert(stripeData.error || "Stripe checkout failed.");
+          setIsSubmitting(false);
+          return;
+        }
+
+        window.location.href = stripeData.url;
+        return;
+      }
+
+      window.location.href = `/booking-success?bookingId=${encodeURIComponent(bookingId)}`;
+    } catch (err) {
+      setIsSubmitting(false);
+      alert(err instanceof Error ? err.message : "Could not complete booking.");
+    }
   }
-}
 
   if (barberLoading) {
     return (
@@ -621,7 +629,7 @@ export default function BookPage() {
                       active={paymentMethod === "online"}
                       icon={<CreditCard />}
                       title="Pay online"
-                      text="Instant confirmed booking"
+                      text="Secure Stripe checkout"
                       onClick={() => setPaymentMethod("online")}
                     />
 
@@ -636,21 +644,10 @@ export default function BookPage() {
 
                   {paymentMethod === "online" ? (
                     <div className="mt-6 rounded-[28px] bg-neutral-50 p-5">
-                      <h3 className="font-black">Card details</h3>
-
-                      <div className="mt-4 grid gap-3">
-                        <Input placeholder="Cardholder name" value={cardName} onChange={setCardName} />
-                        <Input placeholder="Card number" value={cardNumber} onChange={setCardNumber} />
-
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <Input placeholder="MM/YY" value={cardExpiry} onChange={setCardExpiry} />
-                          <Input placeholder="CVC" value={cardCvc} onChange={setCardCvc} />
-                        </div>
-
-                        <p className="text-xs font-bold text-neutral-400">
-                          Demo payment only — no real charge is made.
-                        </p>
-                      </div>
+                      <h3 className="font-black">Online payment</h3>
+                      <p className="mt-2 text-sm leading-6 text-neutral-500">
+                        You will be redirected to Stripe Checkout to complete your secure card payment.
+                      </p>
                     </div>
                   ) : null}
 
@@ -678,7 +675,7 @@ export default function BookPage() {
                         {isSubmitting
                           ? "Processing..."
                           : paymentMethod === "online"
-                          ? "Pay & confirm"
+                          ? "Continue to Stripe"
                           : "Confirm booking"}
                       </button>
                     )}
@@ -703,6 +700,16 @@ export default function BookPage() {
 
       <ChatBot />
     </>
+  );
+}
+
+function BookLoading() {
+  return (
+    <WebShell title="Book appointment" subtitle="Loading booking page...">
+      <div className="mx-auto max-w-3xl rounded-[32px] border border-black/10 bg-white p-8 shadow-sm">
+        <div className="font-black">Loading booking page...</div>
+      </div>
+    </WebShell>
   );
 }
 
@@ -859,25 +866,6 @@ function PaymentButton({
   );
 }
 
-function Input({
-  placeholder,
-  value,
-  onChange,
-}: {
-  placeholder: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <input
-      placeholder={placeholder}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold outline-none transition focus:border-[#ff355d]"
-    />
-  );
-}
-
 function BookingSummary({
   barberName,
   serviceName,
@@ -929,7 +917,7 @@ function BookingSummary({
       </div>
 
       <div className="mt-6 rounded-[24px] bg-neutral-50 p-4 text-sm leading-6 text-neutral-500">
-        Online bookings are auto-confirmed. Pay-at-salon bookings are created as pending.
+        Online payments are completed through secure Stripe Checkout.
       </div>
     </aside>
   );
