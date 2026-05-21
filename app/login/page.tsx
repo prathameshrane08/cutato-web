@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   CalendarCheck,
@@ -30,6 +30,14 @@ function isEmail(s: string) {
 }
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginLoading />}>
+      <LoginPageInner />
+    </Suspense>
+  );
+}
+
+function LoginPageInner() {
   const router = useRouter();
   const sp = useSearchParams();
   const next = sp.get("next") || "/";
@@ -393,6 +401,16 @@ export default function LoginPage() {
             Customer, barber, and salon accounts all sign in here. Social login accounts are treated as customer accounts unless a profile role is assigned by the salon.
           </div>
         </section>
+      </div>
+    </WebShell>
+  );
+}
+
+function LoginLoading() {
+  return (
+    <WebShell title="Welcome back" subtitle="Loading login page...">
+      <div className="mx-auto max-w-3xl rounded-[32px] border border-black/10 bg-white p-8 shadow-sm">
+        <div className="font-black">Loading login page...</div>
       </div>
     </WebShell>
   );

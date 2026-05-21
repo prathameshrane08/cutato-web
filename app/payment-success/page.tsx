@@ -1,13 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
 
 import WebShell from "@/app/Components/WebShell";
 
 export default function PaymentSuccessPage() {
+  return (
+    <Suspense fallback={<PaymentSuccessLoading />}>
+      <PaymentSuccessInner />
+    </Suspense>
+  );
+}
+
+function PaymentSuccessInner() {
   const sp = useSearchParams();
 
   const sessionId = sp.get("session_id");
@@ -112,6 +120,16 @@ export default function PaymentSuccessPage() {
             ) : null}
           </div>
         </div>
+      </div>
+    </WebShell>
+  );
+}
+
+function PaymentSuccessLoading() {
+  return (
+    <WebShell title="Payment successful" subtitle="Loading payment confirmation...">
+      <div className="mx-auto max-w-3xl rounded-[32px] border border-black/10 bg-white p-8 shadow-sm">
+        <div className="font-black">Loading payment confirmation...</div>
       </div>
     </WebShell>
   );
