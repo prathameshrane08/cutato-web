@@ -385,31 +385,31 @@ function BookPageInner() {
       sessionStorage.removeItem("cutato_ai_hair_reference");
 
       if (paymentMethod === "online") {
-        const stripeRes = await fetch("/api/stripe/checkout", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            serviceName: service.name,
-            amountEuro: finalServicePrice,
-            barberName: barber.name,
-            bookingId,
-            customerEmail: authUser.email,
-          }),
-        });
+  const stripeRes = await fetch("/api/stripe/checkout", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      serviceName: service.name,
+      amountEuro: finalServicePrice,
+      barberName: barber.name,
+      bookingId,
+      customerEmail: authUser.email,
+    }),
+  });
 
-        const stripeData = await stripeRes.json();
+  const stripeData = await stripeRes.json();
 
-        if (!stripeRes.ok || !stripeData.url) {
-          alert(stripeData.error || "Stripe checkout failed.");
-          setIsSubmitting(false);
-          return;
-        }
+  if (!stripeRes.ok || !stripeData.url) {
+    alert(stripeData.error || "Stripe checkout failed.");
+    setIsSubmitting(false);
+    return;
+  }
 
-        window.location.href = stripeData.url;
-        return;
-      }
+  window.location.href = stripeData.url;
+  return;
+}
 
       window.location.href = `/booking-success?bookingId=${encodeURIComponent(bookingId)}`;
     } catch (err) {
