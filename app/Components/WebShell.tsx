@@ -101,7 +101,7 @@ setUser(restoredUser);
             </div>
           </Link>
 
-          <nav className="hidden items-center gap-2 lg:flex">
+          <nav className="hidden items-center gap-2 md:flex">
             <NavLink href="/">Home</NavLink>
             <NavLink href="#featured-barbers">Barbers</NavLink>
             <NavLink href="/portal/barber/apply">Become a barber</NavLink>
@@ -117,7 +117,7 @@ setUser(restoredUser);
             Live booking active
           </div>
 
-          <div className="hidden items-center gap-2 lg:flex">
+          <div className="hidden items-center gap-2 md:flex">
             <ThemeSwitcher />
 
             {user ? (
@@ -179,7 +179,7 @@ setUser(restoredUser);
 
           <button
             onClick={() => setMobileOpen((v) => !v)}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-black/10 bg-white shadow-sm lg:hidden"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-black/10 bg-white shadow-sm md:hidden"
             aria-label="Toggle menu"
           >
             <Menu size={20} />
