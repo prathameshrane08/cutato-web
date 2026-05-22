@@ -274,12 +274,7 @@ function BookPageInner() {
   const currentUser = getAuthUser();
 
   function validatePayment() {
-    if (paymentMethod === "salon") return true;
-    if (!cardName.trim()) return "Enter cardholder name.";
-    if (cardNumber.replace(/\s/g, "").length < 12) return "Enter a valid card number.";
-    if (!cardExpiry.includes("/")) return "Enter expiry like MM/YY.";
-    if (cardCvc.trim().length < 3) return "Enter a valid CVC.";
-    return true;
+  return true;
   }
 
   function goToLogin() {
