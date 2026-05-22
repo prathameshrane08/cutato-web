@@ -51,7 +51,7 @@ async function login() {
       return;
     }
 
-    router.push("/portal/salon/dashboard");
+    router.push("/portal/salon");
   } catch (err: any) {
     alert(err?.message || "Login failed");
   } finally {
