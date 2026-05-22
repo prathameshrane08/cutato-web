@@ -84,15 +84,15 @@ setUser(restoredUser);
 
   return (
     <main className="min-h-screen bg-[#f6f6f7] text-neutral-950">
-      <header className="sticky top-0 z-50 border-b border-black/5 bg-white/75 backdrop-blur-2xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 md:px-6">
-          <Link href="/" className="group flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#ff355d] text-white shadow-lg shadow-[#ff355d]/25 transition group-hover:scale-105">
+      <header className="sticky top-0 z-50 border-b border-black/5 bg-white/80 backdrop-blur-xl">
+        <div className="mx-auto flex h-[78px] max-w-7xl items-center justify-between px-4 md:px-6">
+          <Link href="/" className="group flex items-center gap-4">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ff355d] text-white shadow-lg shadow-[#ff355d]/25 transition group-hover:scale-105"/>
               <Scissors size={20} />
-            </span>
+            <div className="leading-none"></div>
 
             <span>
-              <span className="block text-lg font-black tracking-[-0.04em]">
+              <span className="block text-lg font-black tracking-[-0.06em]">
                 CUTATO
               </span>
               <span className="hidden text-xs font-bold text-neutral-400 sm:block">
@@ -111,6 +111,11 @@ setUser(restoredUser);
               <NavLink href="/bookings">Bookings</NavLink>
             ) : null}
           </nav>
+
+          <div className="hidden xl:flex items-center gap-2 rounded-full border border-black/5 bg-neutral-100 px-4 py-2 text-xs font-black text-neutral-500">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            Live booking active
+          </div>
 
           <div className="hidden items-center gap-2 lg:flex">
             <ThemeSwitcher />
