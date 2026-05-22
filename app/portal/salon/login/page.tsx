@@ -3,14 +3,63 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Building2, Mail, Lock } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/app/lib/supabase/client";
 
 import WebShell from "@/app/Components/WebShell";
 
 export default function SalonLoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const router = useRouter();
+  const supabase = createClient();
 
-  return (
+const [loading, setLoading] = useState(false);
+async function login() {
+  try {
+    setLoading(true);
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      alert("Login failed");
+      return;
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile || profile.role !== "salon") {
+      await supabase.auth.signOut();
+
+      alert("This account is not a salon account.");
+      return;
+    }
+
+    router.push("/portal/salon/dashboard");
+  } catch (err: any) {
+    alert(err?.message || "Login failed");
+  } finally {
+    setLoading(false);
+  }
+}
+
+return (
     <WebShell
       title="Salon portal"
       subtitle="Login to manage your salon operations."

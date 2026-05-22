@@ -3,12 +3,62 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Scissors, Mail, Lock } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/app/lib/supabase/client";
 
 import WebShell from "@/app/Components/WebShell";
 
 export default function BarberLoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const router = useRouter();
+  const supabase = createClient();
+
+const [loading, setLoading] = useState(false);
+
+  async function login() {
+  try {
+    setLoading(true);
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      alert("Login failed");
+      return;
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile || profile.role !== "barber") {
+      await supabase.auth.signOut();
+
+      alert("This account is not a barber account.");
+      return;
+    }
+
+    router.push("/portal/barber/dashboard");
+  } catch (err: any) {
+    alert(err?.message || "Login failed");
+  } finally {
+    setLoading(false);
+  }
+}
 
   return (
     <WebShell
@@ -54,9 +104,11 @@ export default function BarberLoginPage() {
             </div>
 
             <button
-              className="inline-flex h-14 items-center justify-center rounded-full bg-[#ff355d] px-6 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:bg-[#ff1f4c]"
+              onClick={login}
+              disabled={loading}
+              className="inline-flex h-14 items-center justify-center rounded-full bg-[#ff355d] px-6 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:bg-[#ff1f4c] disabled:opacity-50"
             >
-              Login
+              {loading ? "Logging in..." : "Login"}
             </button>
 
             <Link
