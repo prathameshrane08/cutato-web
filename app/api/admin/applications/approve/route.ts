@@ -17,10 +17,7 @@ export async function POST(req: Request) {
     const applicationId = body.applicationId;
 
     if (!applicationId) {
-      return NextResponse.json(
-        { error: "Missing applicationId" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing applicationId" }, { status: 400 });
     }
 
     const { data: application, error: fetchError } = await adminSupabase
@@ -30,21 +27,16 @@ export async function POST(req: Request) {
       .single();
 
     if (fetchError || !application) {
-      return NextResponse.json(
-        { error: "Application not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Application not found" }, { status: 404 });
     }
 
     const email = String(application.email || "").trim().toLowerCase();
 
     if (!email || !email.includes("@") || !email.includes(".")) {
-      return NextResponse.json(
-        { error: "Invalid application email." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid application email." }, { status: 400 });
     }
 
+    const role = application.type === "salon" ? "salon" : "barber";
     const tempPassword = generatePassword();
 
     const { data: authData, error: authError } =
@@ -56,34 +48,90 @@ export async function POST(req: Request) {
 
     if (authError || !authData.user) {
       return NextResponse.json(
-        {
-          error: authError?.message || "Could not create auth user",
-        },
+        { error: authError?.message || "Could not create auth user" },
         { status: 500 }
       );
     }
 
-    const role = application.type === "salon" ? "salon" : "barber";
+    let barberId: string | null = null;
+    let salonId: string | null = null;
+
+    if (role === "salon") {
+      const { data: salonRow, error: salonError } = await adminSupabase
+        .from("salons")
+        .insert({
+          name: application.salon_name || application.name || email.split("@")[0],
+          owner_name: application.owner_name || application.name || null,
+          email,
+          phone: application.phone || null,
+          city: application.city || null,
+          address: application.address || null,
+          active: true,
+          updated_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (salonError || !salonRow) {
+        return NextResponse.json(
+          { error: salonError?.message || "Could not create salon profile" },
+          { status: 500 }
+        );
+      }
+
+      salonId = salonRow.id;
+    }
+
+    if (role === "barber") {
+      const { data: barberRow, error: barberError } = await adminSupabase
+        .from("barbers")
+        .insert({
+          name: application.name || email.split("@")[0],
+          area: application.city || "Unknown",
+          address: application.address || application.city || "Unknown",
+          dist_km: 0,
+          rating: 5,
+          reviews: 0,
+          tagline: "New Cutato barber",
+          about: application.experience || "Professional barber on Cutato.",
+          active: true,
+          salon_id: null,
+        })
+        .select()
+        .single();
+
+      if (barberError || !barberRow) {
+        return NextResponse.json(
+          { error: barberError?.message || "Could not create barber profile" },
+          { status: 500 }
+        );
+      }
+
+      barberId = barberRow.id;
+    }
+
+    const profilePayload: any = {
+      id: authData.user.id,
+      email,
+      role,
+      name:
+        application.name ||
+        application.owner_name ||
+        application.salon_name ||
+        email.split("@")[0],
+      barber_id: barberId,
+    };
+
+    if (salonId) {
+      profilePayload.salon_id = salonId;
+    }
 
     const { error: profileError } = await adminSupabase
       .from("profiles")
-      .insert({
-        id: authData.user.id,
-        email,
-        role,
-        name:
-          application.name ||
-          application.owner_name ||
-          application.salon_name ||
-          email.split("@")[0],
-        barber_id: null,
-      });
+      .insert(profilePayload);
 
     if (profileError) {
-      return NextResponse.json(
-        { error: profileError.message },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: profileError.message }, { status: 500 });
     }
 
     const { error: updateError } = await adminSupabase
@@ -92,10 +140,7 @@ export async function POST(req: Request) {
       .eq("id", applicationId);
 
     if (updateError) {
-      return NextResponse.json(
-        { error: updateError.message },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
 
     await sendApprovalEmail({
@@ -108,6 +153,9 @@ export async function POST(req: Request) {
       ok: true,
       email,
       temporaryPassword: tempPassword,
+      role,
+      barberId,
+      salonId,
     });
   } catch (err: any) {
     return NextResponse.json(
