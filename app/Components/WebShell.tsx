@@ -103,8 +103,13 @@ setUser(restoredUser);
 
           <nav className="hidden items-center gap-2 lg:flex">
             <NavLink href="/">Home</NavLink>
-            <NavLink href="/book">Book</NavLink>
-            <NavLink href="/bookings">Bookings</NavLink>
+            <NavLink href="#featured-barbers">Barbers</NavLink>
+            <NavLink href="/portal/barber/apply">Become a barber</NavLink>
+            <NavLink href="/portal/salon/apply">Register salon</NavLink>
+
+            {user?.role === "customer" ? (
+              <NavLink href="/bookings">Bookings</NavLink>
+            ) : null}
           </nav>
 
           <div className="hidden items-center gap-2 lg:flex">
@@ -140,14 +145,28 @@ setUser(restoredUser);
                   href="/login"
                   className="rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-black shadow-sm transition hover:-translate-y-0.5 hover:bg-neutral-50"
                 >
-                  Login
+                  Customer login
                 </Link>
 
                 <Link
                   href="/signup"
                   className="rounded-full bg-[#ff355d] px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:-translate-y-0.5 hover:bg-[#ff1f4c]"
                 >
-                  Sign up
+                  Customer signup
+                </Link>
+
+                <Link
+                  href="/portal/barber/login"
+                  className="rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-black shadow-sm transition hover:-translate-y-0.5 hover:bg-neutral-50"
+                >
+                  Barber login
+                </Link>
+
+                <Link
+                  href="/portal/salon/login"
+                  className="rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-black shadow-sm transition hover:-translate-y-0.5 hover:bg-neutral-50"
+                >
+                  Salon login
                 </Link>
               </>
             )}
@@ -201,20 +220,20 @@ setUser(restoredUser);
                 </>
               ) : (
                 <div className="grid grid-cols-2 gap-2">
-                  <Link
-                    href="/login"
-                    onClick={() => setMobileOpen(false)}
-                    className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-center text-sm font-black"
-                  >
-                    Login
+                  <Link href="/login" onClick={() => setMobileOpen(false)} className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-center text-sm font-black">
+                    Customer login
                   </Link>
 
-                  <Link
-                    href="/signup"
-                    onClick={() => setMobileOpen(false)}
-                    className="rounded-2xl bg-[#ff355d] px-4 py-3 text-center text-sm font-black text-white"
-                  >
-                    Sign up
+                  <Link href="/signup" onClick={() => setMobileOpen(false)} className="rounded-2xl bg-[#ff355d] px-4 py-3 text-center text-sm font-black text-white">
+                    Customer signup
+                  </Link>
+
+                  <Link href="/portal/barber/login" onClick={() => setMobileOpen(false)} className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-center text-sm font-black">
+                    Barber login
+                  </Link>
+
+                  <Link href="/portal/salon/login" onClick={() => setMobileOpen(false)} className="rounded-2xl border border-black/10 bg-white px-4 py-3 text-center text-sm font-black">
+                    Salon login
                   </Link>
                 </div>
               )}
