@@ -11,6 +11,8 @@ import {
   Users,
 } from "lucide-react";
 
+import { useRouter } from "next/navigation";
+import { createClient } from "@/app/lib/supabase/client";
 import WebShell from "@/app/Components/WebShell";
 import { useCustomerBarbers } from "@/app/lib/barbersStore";
 import type { Booking } from "@/app/lib/bookingStore";
@@ -59,9 +61,37 @@ export default function SalonDashboardPage() {
       </WebShell>
     );
   }
-
+  const router = useRouter();
+  const supabase = createClient();
   const { barbers } = useCustomerBarbers();
   const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+  async function protect() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      router.replace("/portal/salon/login");
+      return;
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile || profile.role !== "salon") {
+      await supabase.auth.signOut();
+
+      router.replace("/portal/salon/login");
+    }
+  }
+
+  protect();
+}, []);
 
   useEffect(() => {
     const unsub = subscribeStoreUpdates(() => setTick((v) => v + 1));

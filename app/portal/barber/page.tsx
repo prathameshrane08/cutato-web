@@ -11,7 +11,8 @@ import type { Booking } from "@/app/lib/bookingStore";
 import { getBookingsForBarber } from "@/app/lib/bookingsSupabase";
 import { fmtMoney, statusLabel, statusPillStyle } from "@/app/lib/formatters";
 import { requireBarberAuth } from "@/app/portal/_lib/portalAuth";
-
+import { useRouter } from "next/navigation";
+import { createClient } from "@/app/lib/supabase/client";
 function dayKey(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
     d.getDate()
@@ -50,7 +51,35 @@ export default function BarberPortalPage() {
   const [barber, setBarber] = useState<CustomerBarber | null>(null);
   const [barberLoading, setBarberLoading] = useState(true);
   const [allBookings, setAllBookings] = useState<Booking[]>([]);
+  const router = useRouter();
+  const supabase = createClient();
 
+  useEffect(() => {
+  async function protect() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      router.replace("/portal/barber/login");
+      return;
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile || profile.role !== "barber") {
+      await supabase.auth.signOut();
+
+      router.replace("/portal/barber/login");
+    }
+  }
+
+  protect();
+}, []);
 
   useEffect(() => {
     async function loadBarber() {
