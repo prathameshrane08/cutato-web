@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/app/lib/supabase/client";
+
 import WebShell from "@/app/Components/WebShell";
 
 type Application = {
@@ -39,7 +40,9 @@ export default function AdminApplicationsPage() {
     const { data, error } = await supabase
       .from("applications")
       .select("*")
-      .order("created_at", { ascending: false });
+      .order("created_at", {
+        ascending: false,
+      });
 
     if (!error && data) {
       setApplications(data);
@@ -48,7 +51,42 @@ export default function AdminApplicationsPage() {
     setLoading(false);
   }
 
-  async function updateStatus(id: string, status: string) {
+  async function approveApplication(id: string) {
+    try {
+      const res = await fetch(
+        "/api/admin/applications/approve",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            applicationId: id,
+          }),
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || "Approval failed");
+        return;
+      }
+
+      alert(
+        `Approved successfully.\n\nLogin email: ${data.email}\nTemporary password: ${data.temporaryPassword}`
+      );
+
+      loadApplications();
+    } catch (err: any) {
+      alert(err?.message || "Approval failed");
+    }
+  }
+
+  async function updateStatus(
+    id: string,
+    status: string
+  ) {
     const { error } = await supabase
       .from("applications")
       .update({
@@ -63,31 +101,6 @@ export default function AdminApplicationsPage() {
 
     loadApplications();
   }
-
-  async function approveApplication(id: string) {
-  const res = await fetch("/api/admin/applications/approve", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      applicationId: id,
-    }),
-  });
-
-  const data = await res.json();
-
-  if (!res.ok) {
-    alert(data.error || "Approval failed");
-    return;
-  }
-
-  alert(
-    `Approved successfully.\n\nLogin email: ${data.email}\nTemporary password: ${data.temporaryPassword}`
-  );
-
-  loadApplications();
-}
 
   useEffect(() => {
     loadApplications();
@@ -145,34 +158,53 @@ export default function AdminApplicationsPage() {
 
               <div className="mt-6 grid gap-3 md:grid-cols-2">
                 {app.phone ? (
-                  <Info label="Phone" value={app.phone} />
+                  <Info
+                    label="Phone"
+                    value={app.phone}
+                  />
                 ) : null}
 
                 {app.city ? (
-                  <Info label="City" value={app.city} />
+                  <Info
+                    label="City"
+                    value={app.city}
+                  />
                 ) : null}
 
                 {app.experience ? (
-                  <Info label="Experience" value={app.experience} />
+                  <Info
+                    label="Experience"
+                    value={app.experience}
+                  />
                 ) : null}
 
                 {app.instagram ? (
-                  <Info label="Instagram" value={app.instagram} />
+                  <Info
+                    label="Instagram"
+                    value={app.instagram}
+                  />
                 ) : null}
 
                 {app.owner_name ? (
-                  <Info label="Owner" value={app.owner_name} />
+                  <Info
+                    label="Owner"
+                    value={app.owner_name}
+                  />
                 ) : null}
 
                 {app.address ? (
-                  <Info label="Address" value={app.address} />
+                  <Info
+                    label="Address"
+                    value={app.address}
+                  />
                 ) : null}
               </div>
 
               {app.status === "pending" ? (
                 <div className="mt-8 flex flex-wrap gap-3">
                   <button
-                    onClick={() => approveApplication(app.id)
+                    onClick={() =>
+                      approveApplication(app.id)
                     }
                     className="rounded-full bg-emerald-600 px-5 py-3 text-sm font-black text-white"
                   >
@@ -181,7 +213,10 @@ export default function AdminApplicationsPage() {
 
                   <button
                     onClick={() =>
-                      updateStatus(app.id, "rejected")
+                      updateStatus(
+                        app.id,
+                        "rejected"
+                      )
                     }
                     className="rounded-full bg-red-600 px-5 py-3 text-sm font-black text-white"
                   >
