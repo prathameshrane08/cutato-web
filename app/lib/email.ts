@@ -286,3 +286,82 @@ export async function sendSalonApplicationEmail(
     console.error("SALON APPLICATION EMAIL ERROR:", err);
   }
 }
+
+type ApprovalEmailInput = {
+  to: string;
+  role: "barber" | "salon";
+  temporaryPassword: string;
+};
+
+export async function sendApprovalEmail(
+  input: ApprovalEmailInput
+) {
+  try {
+    const loginUrl =
+      input.role === "salon"
+        ? `${APP_URL}/portal/salon/login`
+        : `${APP_URL}/portal/barber/login`;
+
+    return await resend.emails.send({
+      from: "Cutato <onboarding@resend.dev>",
+      to: input.to,
+
+      subject: `Your Cutato ${input.role} account is approved`,
+
+      html: `
+        <div style="font-family:Inter,Arial;padding:40px;background:#f5f5f5;">
+          <div style="max-width:650px;margin:auto;background:white;border-radius:28px;border:1px solid #eee;overflow:hidden;">
+
+            <div style="background:#0a0a0a;padding:44px;text-align:center;">
+              <div style="font-size:40px;font-weight:900;color:white;">
+                CUTATO
+              </div>
+
+              <div style="margin-top:12px;color:#ffffff99;">
+                Your account has been approved
+              </div>
+            </div>
+
+            <div style="padding:40px;">
+              <h1 style="font-size:34px;font-weight:900;color:#111;margin:0;">
+                Welcome to Cutato
+              </h1>
+
+              <p style="margin-top:18px;font-size:16px;line-height:1.7;color:#555;">
+                Your ${input.role} account has been approved successfully.
+              </p>
+
+              <div style="margin-top:30px;background:#fafafa;border-radius:24px;padding:24px;border:1px solid #eee;">
+                ${row("Login Email", input.to)}
+                ${row("Temporary Password", input.temporaryPassword)}
+              </div>
+
+              <div style="margin-top:32px;text-align:center;">
+                <a
+                  href="${loginUrl}"
+                  style="
+                    display:inline-block;
+                    padding:16px 28px;
+                    background:#ff355d;
+                    color:white;
+                    text-decoration:none;
+                    border-radius:999px;
+                    font-weight:800;
+                  "
+                >
+                  Open ${input.role} portal
+                </a>
+              </div>
+
+              <p style="margin-top:28px;font-size:13px;color:#999;text-align:center;">
+                Please change your password after logging in.
+              </p>
+            </div>
+          </div>
+        </div>
+      `,
+    });
+  } catch (err) {
+    console.error("APPROVAL EMAIL ERROR:", err);
+  }
+}
