@@ -170,3 +170,119 @@ export async function sendBarberNewBookingEmail(input: BarberBookingEmailInput) 
     console.error("BARBER EMAIL ERROR:", err);
   }
 }
+
+type BarberApplicationInput = {
+  name: string;
+  email: string;
+  phone?: string;
+  city?: string;
+  experience?: string;
+  instagram?: string;
+};
+
+export async function sendBarberApplicationEmail(
+  input: BarberApplicationInput
+) {
+  try {
+    return await resend.emails.send({
+      from: "Cutato <onboarding@resend.dev>",
+      to: process.env.CUTATO_ADMIN_EMAIL || "your@email.com",
+
+      subject: `New Barber Application • ${input.name}`,
+
+      html: `
+        <div style="font-family:Inter,Arial;padding:40px;background:#f5f5f5;">
+          <div style="max-width:650px;margin:auto;background:white;border-radius:28px;border:1px solid #eee;overflow:hidden;">
+
+            <div style="background:#0a0a0a;padding:42px;text-align:center;">
+              <div style="font-size:38px;font-weight:900;color:white;">
+                CUTATO
+              </div>
+
+              <div style="margin-top:10px;color:#ffffff99;">
+                New barber application
+              </div>
+            </div>
+
+            <div style="padding:40px;">
+              <h1 style="font-size:32px;font-weight:900;color:#111;margin:0;">
+                Barber Application
+              </h1>
+
+              <div style="margin-top:28px;background:#fafafa;padding:24px;border-radius:24px;border:1px solid #eee;">
+
+                ${row("Name", input.name)}
+                ${row("Email", input.email)}
+                ${row("Phone", input.phone || "—")}
+                ${row("City", input.city || "—")}
+                ${row("Experience", input.experience || "—")}
+                ${row("Instagram", input.instagram || "—")}
+
+              </div>
+            </div>
+          </div>
+        </div>
+      `,
+    });
+  } catch (err) {
+    console.error("BARBER APPLICATION EMAIL ERROR:", err);
+  }
+}
+
+type SalonApplicationInput = {
+  salonName: string;
+  ownerName: string;
+  email: string;
+  phone?: string;
+  city?: string;
+  address?: string;
+};
+
+export async function sendSalonApplicationEmail(
+  input: SalonApplicationInput
+) {
+  try {
+    return await resend.emails.send({
+      from: "Cutato <onboarding@resend.dev>",
+      to: process.env.CUTATO_ADMIN_EMAIL || "your@email.com",
+
+      subject: `New Salon Application • ${input.salonName}`,
+
+      html: `
+        <div style="font-family:Inter,Arial;padding:40px;background:#f5f5f5;">
+          <div style="max-width:650px;margin:auto;background:white;border-radius:28px;border:1px solid #eee;overflow:hidden;">
+
+            <div style="background:#0a0a0a;padding:42px;text-align:center;">
+              <div style="font-size:38px;font-weight:900;color:white;">
+                CUTATO
+              </div>
+
+              <div style="margin-top:10px;color:#ffffff99;">
+                New salon application
+              </div>
+            </div>
+
+            <div style="padding:40px;">
+              <h1 style="font-size:32px;font-weight:900;color:#111;margin:0;">
+                Salon Application
+              </h1>
+
+              <div style="margin-top:28px;background:#fafafa;padding:24px;border-radius:24px;border:1px solid #eee;">
+
+                ${row("Salon", input.salonName)}
+                ${row("Owner", input.ownerName)}
+                ${row("Email", input.email)}
+                ${row("Phone", input.phone || "—")}
+                ${row("City", input.city || "—")}
+                ${row("Address", input.address || "—")}
+
+              </div>
+            </div>
+          </div>
+        </div>
+      `,
+    });
+  } catch (err) {
+    console.error("SALON APPLICATION EMAIL ERROR:", err);
+  }
+}

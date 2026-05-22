@@ -232,19 +232,42 @@ function HeroSection({
             </div>
           </div>
 
-          <div className="mt-5 flex flex-wrap gap-2">
-            {["Haircut", "Beard trim", "Fade", "Styling", "Premium cut"].map(
-              (item) => (
-                <Link
-                  key={item}
-                  href="#featured-barbers"
-                  className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-black text-white/70 transition hover:bg-white hover:text-neutral-950"
-                >
-                  {item}
-                </Link>
-              )
-            )}
-          </div>
+          <div className="mt-6 flex flex-wrap gap-3">
+  <Link
+    href="/book-ai"
+    className="rounded-full bg-[#ff355d] px-6 py-4 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:bg-[#ff1f4c]"
+  >
+    Book with AI
+  </Link>
+
+  <Link
+    href="/portal/barber/apply"
+    className="rounded-full border border-white/15 bg-white/10 px-6 py-4 text-sm font-black text-white backdrop-blur transition hover:bg-white hover:text-neutral-950"
+  >
+    Become a barber
+  </Link>
+
+  <Link
+    href="/portal/salon/apply"
+    className="rounded-full border border-white/15 bg-white/10 px-6 py-4 text-sm font-black text-white backdrop-blur transition hover:bg-white hover:text-neutral-950"
+  >
+    Register salon
+  </Link>
+</div>
+
+<div className="mt-5 flex flex-wrap gap-2">
+  {["Haircut", "Beard trim", "Fade", "Styling", "Premium cut"].map(
+    (item) => (
+      <Link
+        key={item}
+        href="#featured-barbers"
+        className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-black text-white/70 transition hover:bg-white hover:text-neutral-950"
+      >
+        {item}
+      </Link>
+    )
+  )}
+</div>
 
           <div className="mt-8 grid max-w-xl grid-cols-3 gap-3">
             <MiniStatDark label="Barbers" value={String(barberCount)} />
