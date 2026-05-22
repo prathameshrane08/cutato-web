@@ -3,7 +3,10 @@ import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-import { sendBookingConfirmationEmail } from "@/app/lib/email";
+import {
+  sendBarberNewBookingEmail,
+  sendBookingConfirmationEmail,
+} from "@/app/lib/email";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
@@ -77,21 +80,77 @@ export async function POST(req: Request) {
         .eq("id", bookingId)
         .single();
 
-      if (fetchError) {
+      if (fetchError || !booking) {
         console.error("BOOKING FETCH ERROR:", fetchError);
+
+        return NextResponse.json({
+          received: true,
+          warning: "Booking updated but could not fetch booking for email",
+        });
       }
 
-      if (booking?.user_email) {
+      const customerEmail = booking.user_email || booking.userEmail || "";
+      const barberId =
+        booking.barber_id ||
+        booking.barberId ||
+        booking.assigned_barber_id ||
+        booking.assignedBarberId ||
+        "";
+
+      const barberName =
+        booking.barber_name || booking.barberName || "Your barber";
+
+      const serviceName =
+        booking.service_name || booking.serviceName || "Your service";
+
+      const totalEuro = Number(
+        booking.total_euro ?? booking.totalEuro ?? booking.service_price_euro ?? 0
+      );
+
+      if (customerEmail) {
         await sendBookingConfirmationEmail({
-          to: booking.user_email,
-          customerName:
-            booking.user_email?.split("@")[0] || "there",
-          barberName: booking.barber_name || "Your barber",
-          serviceName: booking.service_name || "Your service",
+          to: customerEmail,
+          customerName: customerEmail.split("@")[0] || "there",
+          barberName,
+          serviceName,
           date: booking.date || "",
           time: booking.time || "",
-          totalEuro: Number(booking.total_euro || 0),
+          totalEuro,
         });
+      }
+
+      let barberEmail = booking.barber_email || booking.barberEmail || "";
+
+      if (!barberEmail && barberId) {
+        const { data: barberProfile, error: profileError } = await adminSupabase
+          .from("profiles")
+          .select("email")
+          .eq("barber_id", barberId)
+          .eq("role", "barber")
+          .maybeSingle();
+
+        if (profileError) {
+          console.error("BARBER PROFILE EMAIL FETCH ERROR:", profileError);
+        }
+
+        barberEmail = barberProfile?.email || "";
+      }
+
+      if (barberEmail) {
+        await sendBarberNewBookingEmail({
+          to: barberEmail,
+          barberName,
+          customerEmail: customerEmail || "Customer",
+          serviceName,
+          date: booking.date || "",
+          time: booking.time || "",
+          totalEuro,
+          paymentMethod: booking.payment_method || booking.paymentMethod,
+          aiStyle: booking.ai_style || booking.aiStyle,
+          haircutBrief: booking.haircut_brief || booking.haircutBrief,
+        });
+      } else {
+        console.log("BARBER EMAIL SKIPPED: No barber email found");
       }
     }
 
