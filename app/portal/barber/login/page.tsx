@@ -52,7 +52,7 @@ const [loading, setLoading] = useState(false);
       return;
     }
 
-    router.push("/portal/barber/dashboard");
+    router.push("/portal/barber");
   } catch (err: any) {
     alert(err?.message || "Login failed");
   } finally {

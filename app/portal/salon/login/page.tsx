@@ -102,8 +102,12 @@ return (
               />
             </div>
 
-            <button className="inline-flex h-14 items-center justify-center rounded-full bg-[#ff355d] px-6 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:bg-[#ff1f4c]">
-              Login
+            <button
+              onClick={login}
+              disabled={loading}
+              className="inline-flex h-14 items-center justify-center rounded-full bg-[#ff355d] px-6 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:bg-[#ff1f4c] disabled:opacity-50"
+            >
+              {loading ? "Logging in..." : "Login"}
             </button>
 
             <Link
