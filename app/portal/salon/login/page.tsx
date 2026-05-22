@@ -1,152 +1,71 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import WebShell from "@/app/Components/WebShell";
-import { getAuthUser, signIn } from "@/app/Components/auth";
+import { useState } from "react";
+import { Building2, Mail, Lock } from "lucide-react";
 
-function isEmail(s: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
-}
+import WebShell from "@/app/Components/WebShell";
 
 export default function SalonLoginPage() {
-  const router = useRouter();
-
-  const [email, setEmail] = useState("salon@cutato.com");
-  const [name, setName] = useState("Salon Owner");
-  const [password, setPassword] = useState("demo1234");
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    const u = getAuthUser();
-    if (!u) return;
-
-    if (u.role === "salon") router.replace("/portal/salon");
-    else if (u.role === "barber") router.replace("/portal/barber");
-    else router.replace("/");
-  }, [router]);
-
-  function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-
-    const trimmedName = name.trim();
-    const normalizedEmail = email.trim().toLowerCase();
-
-    if (!trimmedName) {
-      setError("Please enter your name.");
-      return;
-    }
-
-    if (!isEmail(normalizedEmail)) {
-      setError("Please enter a valid email.");
-      return;
-    }
-
-    signIn({
-      name: trimmedName,
-      email: normalizedEmail,
-      role: "salon",
-    });
-
-    router.push("/portal/salon");
-  }
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   return (
     <WebShell
-      title="Salon login"
-      subtitle="Sign in to manage staff, services, bookings, and settings."
+      title="Salon portal"
+      subtitle="Login to manage your salon operations."
     >
       <div className="mx-auto max-w-md">
-        <div className="theme-card" style={{ padding: 20 }}>
-          <form onSubmit={onSubmit} style={{ display: "grid", gap: 14 }}>
-            <div>
-              <div style={labelStyle}>Name</div>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Salon owner"
-                style={inputStyle}
-              />
-            </div>
+        <div className="rounded-[36px] border border-black/10 bg-white p-8 shadow-[0_20px_70px_rgba(0,0,0,0.07)]">
+          <div className="inline-flex rounded-2xl bg-[#ff355d]/10 p-4 text-[#ff355d]">
+            <Building2 />
+          </div>
 
-            <div>
-              <div style={labelStyle}>Email</div>
+          <h1 className="mt-6 text-4xl font-black tracking-[-0.05em]">
+            Salon login
+          </h1>
+
+          <p className="mt-3 text-sm leading-6 text-neutral-500">
+            Access your salon dashboard, staff management and analytics.
+          </p>
+
+          <div className="mt-8 grid gap-5">
+            <div className="flex h-14 items-center gap-3 rounded-2xl border border-black/10 bg-neutral-50 px-5">
+              <Mail size={18} className="text-neutral-400" />
+
               <input
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="salon@cutato.com"
-                style={inputStyle}
+                placeholder="Business email"
+                className="h-full w-full bg-transparent text-sm font-semibold outline-none"
               />
             </div>
 
-            <div>
-              <div style={labelStyle}>Password</div>
+            <div className="flex h-14 items-center gap-3 rounded-2xl border border-black/10 bg-neutral-50 px-5">
+              <Lock size={18} className="text-neutral-400" />
+
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                style={inputStyle}
+                placeholder="Password"
+                className="h-full w-full bg-transparent text-sm font-semibold outline-none"
               />
             </div>
 
-            {error ? <ErrorBox text={error} /> : null}
-
-            <button className="btn btn-primary" type="submit">
-              Login as salon
+            <button className="inline-flex h-14 items-center justify-center rounded-full bg-[#ff355d] px-6 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:bg-[#ff1f4c]">
+              Login
             </button>
 
-            <div className="theme-muted" style={{ fontSize: 12 }}>
-              Demo login. This signs you in with the <b>salon</b> role.
-            </div>
-
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <Link href="/portal/barber/login" className="btn btn-secondary" style={{ flex: 1 }}>
-                Barber login
-              </Link>
-              <Link href="/login" className="btn btn-secondary" style={{ flex: 1 }}>
-                Customer login
-              </Link>
-            </div>
-          </form>
+            <Link
+              href="/portal/salon/apply"
+              className="text-center text-sm font-bold text-[#ff355d]"
+            >
+              Register your salon
+            </Link>
+          </div>
         </div>
       </div>
     </WebShell>
   );
 }
-
-function ErrorBox({ text }: { text: string }) {
-  return (
-    <div
-      style={{
-        padding: 10,
-        borderRadius: 12,
-        background: "rgba(255,59,94,0.10)",
-        border: "1px solid rgba(255,59,94,0.22)",
-        fontSize: 13,
-        fontWeight: 800,
-      }}
-    >
-      {text}
-    </div>
-  );
-}
-
-const labelStyle: React.CSSProperties = {
-  fontWeight: 900,
-  fontSize: 13,
-  marginBottom: 6,
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  height: 44,
-  padding: "0 12px",
-  borderRadius: 14,
-  border: "1px solid rgba(0,0,0,0.10)",
-  background: "rgba(0,0,0,0.02)",
-  outline: "none",
-  fontWeight: 800,
-};
