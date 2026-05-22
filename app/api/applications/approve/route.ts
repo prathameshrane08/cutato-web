@@ -14,35 +14,34 @@ function generatePassword() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-
     const applicationId = body.applicationId;
 
     if (!applicationId) {
       return NextResponse.json(
-        {
-          error: "Missing applicationId",
-        },
-        {
-          status: 400,
-        }
+        { error: "Missing applicationId" },
+        { status: 400 }
       );
     }
 
-    const { data: application, error: fetchError } =
-      await adminSupabase
-        .from("applications")
-        .select("*")
-        .eq("id", applicationId)
-        .single();
+    const { data: application, error: fetchError } = await adminSupabase
+      .from("applications")
+      .select("*")
+      .eq("id", applicationId)
+      .single();
 
     if (fetchError || !application) {
       return NextResponse.json(
-        {
-          error: "Application not found",
-        },
-        {
-          status: 404,
-        }
+        { error: "Application not found" },
+        { status: 404 }
+      );
+    }
+
+    const email = String(application.email || "").trim().toLowerCase();
+
+    if (!email || !email.includes("@") || !email.includes(".")) {
+      return NextResponse.json(
+        { error: "Invalid application email." },
+        { status: 400 }
       );
     }
 
@@ -50,7 +49,7 @@ export async function POST(req: Request) {
 
     const { data: authData, error: authError } =
       await adminSupabase.auth.admin.createUser({
-        email: application.email,
+        email,
         password: tempPassword,
         email_confirm: true,
       });
@@ -60,81 +59,60 @@ export async function POST(req: Request) {
         {
           error: authError?.message || "Could not create auth user",
         },
-        {
-          status: 500,
-        }
+        { status: 500 }
       );
     }
 
-    const role =
-      application.type === "salon"
-        ? "salon"
-        : "barber";
+    const role = application.type === "salon" ? "salon" : "barber";
 
     const { error: profileError } = await adminSupabase
       .from("profiles")
       .insert({
         id: authData.user.id,
-
-        email: application.email,
+        email,
         role,
-
         name:
           application.name ||
           application.owner_name ||
-          application.salon_name,
-
+          application.salon_name ||
+          email.split("@")[0],
         barber_id: null,
       });
 
     if (profileError) {
       return NextResponse.json(
-        {
-          error: profileError.message,
-        },
-        {
-          status: 500,
-        }
+        { error: profileError.message },
+        { status: 500 }
       );
     }
 
     const { error: updateError } = await adminSupabase
       .from("applications")
-      .update({
-        status: "approved",
-      })
+      .update({ status: "approved" })
       .eq("id", applicationId);
-
-      await sendApprovalEmail({
-        to: application.email,
-        role,
-        temporaryPassword: tempPassword,
-      });
 
     if (updateError) {
       return NextResponse.json(
-        {
-          error: updateError.message,
-        },
-        {
-          status: 500,
-        }
+        { error: updateError.message },
+        { status: 500 }
       );
     }
 
+    await sendApprovalEmail({
+      to: email,
+      role,
+      temporaryPassword: tempPassword,
+    });
+
     return NextResponse.json({
       ok: true,
-      email: application.email,
+      email,
       temporaryPassword: tempPassword,
     });
   } catch (err: any) {
     return NextResponse.json(
-      {
-        error: err?.message || "Approval failed",
-      },
-      {
-        status: 500,
-      }
+      { error: err?.message || "Approval failed" },
+      { status: 500 }
     );
   }
 }
