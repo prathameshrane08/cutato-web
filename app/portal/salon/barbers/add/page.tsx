@@ -2,13 +2,19 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mail, MapPin, Scissors, Sparkles } from "lucide-react";
+import Link from "next/link";
+import {
+  ArrowLeft,
+  Mail,
+  MapPin,
+  Scissors,
+  Sparkles,
+} from "lucide-react";
 
 import WebShell from "@/app/Components/WebShell";
 import { createClient } from "@/app/lib/supabase/client";
-import { getCurrentUser } from "@/app/lib/authSupabase";
 
-export default function AddSalonBarberPage() {
+export default function AddBarberPage() {
   const router = useRouter();
   const supabase = createClient();
 
@@ -21,13 +27,15 @@ export default function AddSalonBarberPage() {
   const [speciality, setSpeciality] = useState("");
   const [tagline, setTagline] = useState("");
 
-  async function submit() {
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
     try {
       setLoading(true);
 
       const {
         data: { user },
-      } = await getCurrentUser();
+      } = await supabase.auth.getUser();
 
       if (!user) {
         alert("Please login again.");
@@ -45,52 +53,130 @@ export default function AddSalonBarberPage() {
         return;
       }
 
-      const { error } = await supabase.from("barbers").insert({
-        name,
-        email,
-        area: area || "Unknown",
-        address: address || area || "Unknown",
-        speciality,
-        tagline,
-        dist_km: 0,
-        rating: 5,
-        reviews: 0,
-        active: true,
-        salon_id: profile.salon_id,
+      const res = await fetch("/api/salon/barbers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name,
+          email,
+          area,
+          address,
+          speciality,
+          tagline,
+          salonId: profile.salon_id,
+        }),
       });
 
-      if (error) {
-        alert(error.message);
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || "Could not add barber");
         return;
       }
 
-      router.push("/portal/salon/barbers");
+      alert("Barber added successfully!");
+
+      router.push("/portal/salon/staff");
     } catch (err: any) {
-      alert(err?.message || "Could not add barber.");
+      alert(err?.message || "Something went wrong.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <WebShell title="Add barber" subtitle="Create a barber profile under your salon.">
-      <div className="mx-auto max-w-2xl rounded-[36px] border border-black/10 bg-white p-8 shadow-sm">
-        <div className="grid gap-5">
-          <Input icon={<Scissors size={18} />} placeholder="Barber name" value={name} onChange={setName} />
-          <Input icon={<Mail size={18} />} placeholder="Email" value={email} onChange={setEmail} />
-          <Input icon={<MapPin size={18} />} placeholder="Area" value={area} onChange={setArea} />
-          <Input icon={<MapPin size={18} />} placeholder="Address" value={address} onChange={setAddress} />
-          <Input icon={<Sparkles size={18} />} placeholder="Speciality" value={speciality} onChange={setSpeciality} />
-          <Input icon={<Sparkles size={18} />} placeholder="Tagline" value={tagline} onChange={setTagline} />
+    <WebShell
+      title="Add barber"
+      subtitle="Create a barber profile for your salon"
+    >
+      <div className="mx-auto max-w-3xl">
+        <div className="mb-6">
+          <Link
+            href="/portal/salon/staff"
+            className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-black shadow-sm transition hover:bg-neutral-50"
+          >
+            <ArrowLeft size={16} />
+            Back to staff
+          </Link>
+        </div>
+
+        <form
+          onSubmit={handleSubmit}
+          className="rounded-[36px] border border-black/10 bg-white p-6 shadow-sm md:p-8"
+        >
+          <div className="mb-8">
+            <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">
+              New barber
+            </p>
+
+            <h1 className="mt-2 text-4xl font-black tracking-[-0.05em]">
+              Create barber profile
+            </h1>
+
+            <p className="mt-3 text-neutral-500">
+              Add barbers to your salon team and manage them centrally.
+            </p>
+          </div>
+
+          <div className="grid gap-5">
+            <Input
+              icon={<Scissors size={18} />}
+              placeholder="Barber name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+
+            <Input
+              icon={<Mail size={18} />}
+              placeholder="Email address"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+
+            <Input
+              icon={<MapPin size={18} />}
+              placeholder="Area / city"
+              value={area}
+              onChange={(e) => setArea(e.target.value)}
+              required
+            />
+
+            <Input
+              icon={<MapPin size={18} />}
+              placeholder="Full address"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              required
+            />
+
+            <Input
+              icon={<Sparkles size={18} />}
+              placeholder="Speciality (Fade, Beard, Styling...)"
+              value={speciality}
+              onChange={(e) => setSpeciality(e.target.value)}
+            />
+
+            <Input
+              icon={<Sparkles size={18} />}
+              placeholder="Tagline"
+              value={tagline}
+              onChange={(e) => setTagline(e.target.value)}
+            />
+          </div>
 
           <button
-            onClick={submit}
-            disabled={loading || !name}
-            className="h-14 rounded-full bg-[#ff355d] text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 disabled:opacity-50"
+            type="submit"
+            disabled={loading}
+            className="mt-8 w-full rounded-full bg-[#ff355d] px-6 py-4 text-lg font-black text-white shadow-lg shadow-[#ff355d]/20 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? "Adding..." : "Add barber"}
           </button>
-        </div>
+        </form>
       </div>
     </WebShell>
   );
@@ -98,23 +184,17 @@ export default function AddSalonBarberPage() {
 
 function Input({
   icon,
-  placeholder,
-  value,
-  onChange,
-}: {
+  ...props
+}: React.InputHTMLAttributes<HTMLInputElement> & {
   icon: React.ReactNode;
-  placeholder: string;
-  value: string;
-  onChange: (v: string) => void;
 }) {
   return (
-    <div className="flex h-14 items-center gap-3 rounded-2xl border border-black/10 bg-neutral-50 px-5">
+    <div className="flex items-center gap-3 rounded-[24px] border border-black/10 bg-neutral-50 px-5 py-4">
       <div className="text-neutral-400">{icon}</div>
+
       <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="h-full w-full bg-transparent text-sm font-semibold outline-none"
+        {...props}
+        className="w-full bg-transparent text-lg font-semibold outline-none placeholder:text-neutral-400"
       />
     </div>
   );
