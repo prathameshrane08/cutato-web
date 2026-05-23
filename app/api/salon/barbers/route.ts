@@ -20,6 +20,7 @@ export async function POST(req: Request) {
     const { error } = await adminSupabase.from("barbers").insert({
       name: body.name,
       email: body.email,
+      id: crypto.randomUUID(),
       area: body.area || "Unknown",
       address: body.address || body.area || "Unknown",
       speciality: body.speciality,
