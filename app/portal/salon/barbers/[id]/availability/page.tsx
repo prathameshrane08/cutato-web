@@ -5,53 +5,72 @@ import { useParams } from "next/navigation";
 import WebShell from "@/app/Components/WebShell";
 import { createClient } from "@/app/lib/supabase/client";
 
-const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const days = [
+  { day: 0, label: "Sun" },
+  { day: 1, label: "Mon" },
+  { day: 2, label: "Tue" },
+  { day: 3, label: "Wed" },
+  { day: 4, label: "Thu" },
+  { day: 5, label: "Fri" },
+  { day: 6, label: "Sat" },
+];
+
+type WorkingHour = {
+  id?: string;
+  barber_id: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  break_start: string | null;
+  break_end: string | null;
+  active: boolean;
+};
 
 export default function BarberAvailabilityPage() {
-  const { id } = useParams<{ id: string }>();
+  const params = useParams<{ id: string }>();
+  const barberId = params.id;
   const supabase = createClient();
 
-  const [rows, setRows] = useState<any[]>([]);
+  const [rows, setRows] = useState<WorkingHour[]>([]);
   const [loading, setLoading] = useState(true);
+  const [savingDay, setSavingDay] = useState<number | null>(null);
 
   async function load() {
-    const { data } = await supabase
-      .from("barber_working_hours")
-      .select("*")
-      .eq("barber_id", id)
-      .order("day_of_week");
+    try {
+      setLoading(true);
 
-    setRows(data || []);
-    setLoading(false);
-  }
+      const { data, error } = await supabase
+        .from("barber_working_hours")
+        .select("*")
+        .eq("barber_id", barberId)
+        .order("day_of_week");
 
-  async function save(day: number) {
-    const existing = rows.find((r) => r.day_of_week === day);
+      if (error) {
+        alert(error.message);
+        return;
+      }
 
-    const payload = {
-      barber_id: id,
-      day_of_week: day,
-      start_time: existing?.start_time || "09:00",
-      end_time: existing?.end_time || "18:00",
-      break_start: existing?.break_start || null,
-      break_end: existing?.break_end || null,
-      active: existing?.active ?? true,
-      updated_at: new Date().toISOString(),
-    };
-
-    const { error } = await supabase
-      .from("barber_working_hours")
-      .upsert(payload, { onConflict: "barber_id,day_of_week" });
-
-    if (error) {
-      alert(error.message);
-      return;
+      setRows(data || []);
+    } finally {
+      setLoading(false);
     }
-
-    load();
   }
 
-  function updateLocal(day: number, key: string, value: any) {
+  function getRow(day: number): WorkingHour {
+    return (
+      rows.find((r) => r.day_of_week === day) || {
+        barber_id: barberId,
+        day_of_week: day,
+        start_time: "09:00",
+        end_time: "18:00",
+        break_start: null,
+        break_end: null,
+        active: true,
+      }
+    );
+  }
+
+  function updateLocal(day: number, key: keyof WorkingHour, value: any) {
     setRows((prev) => {
       const existing = prev.find((r) => r.day_of_week === day);
 
@@ -64,7 +83,7 @@ export default function BarberAvailabilityPage() {
       return [
         ...prev,
         {
-          barber_id: id,
+          barber_id: barberId,
           day_of_week: day,
           start_time: "09:00",
           end_time: "18:00",
@@ -72,14 +91,51 @@ export default function BarberAvailabilityPage() {
           break_end: null,
           active: true,
           [key]: value,
-        },
+        } as WorkingHour,
       ];
     });
   }
 
+  async function save(day: number) {
+    try {
+      setSavingDay(day);
+
+      const row = getRow(day);
+
+      const res = await fetch("/api/salon/barbers/availability", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          barberId,
+          dayOfWeek: day,
+          startTime: row.start_time?.slice(0, 5) || "09:00",
+          endTime: row.end_time?.slice(0, 5) || "18:00",
+          breakStart: row.break_start ? row.break_start.slice(0, 5) : null,
+          breakEnd: row.break_end ? row.break_end.slice(0, 5) : null,
+          active: row.active,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || "Could not save availability");
+        return;
+      }
+
+      await load();
+    } catch (err: any) {
+      alert(err?.message || "Could not save availability");
+    } finally {
+      setSavingDay(null);
+    }
+  }
+
   useEffect(() => {
-    load();
-  }, [id]);
+    if (barberId) load();
+  }, [barberId]);
 
   return (
     <WebShell title="Barber availability" subtitle="Set weekly working hours.">
@@ -87,8 +143,8 @@ export default function BarberAvailabilityPage() {
         {loading ? (
           <div className="rounded-[28px] bg-white p-8">Loading...</div>
         ) : (
-          days.map((label, day) => {
-            const row = rows.find((r) => r.day_of_week === day);
+          days.map(({ day, label }) => {
+            const row = getRow(day);
 
             return (
               <div
@@ -100,7 +156,7 @@ export default function BarberAvailabilityPage() {
 
                   <input
                     type="time"
-                    value={row?.start_time?.slice(0, 5) || "09:00"}
+                    value={row.start_time?.slice(0, 5) || "09:00"}
                     onChange={(e) =>
                       updateLocal(day, "start_time", e.target.value)
                     }
@@ -109,7 +165,7 @@ export default function BarberAvailabilityPage() {
 
                   <input
                     type="time"
-                    value={row?.end_time?.slice(0, 5) || "18:00"}
+                    value={row.end_time?.slice(0, 5) || "18:00"}
                     onChange={(e) =>
                       updateLocal(day, "end_time", e.target.value)
                     }
@@ -118,7 +174,7 @@ export default function BarberAvailabilityPage() {
 
                   <input
                     type="time"
-                    value={row?.break_start?.slice(0, 5) || ""}
+                    value={row.break_start?.slice(0, 5) || ""}
                     onChange={(e) =>
                       updateLocal(day, "break_start", e.target.value || null)
                     }
@@ -127,7 +183,7 @@ export default function BarberAvailabilityPage() {
 
                   <input
                     type="time"
-                    value={row?.break_end?.slice(0, 5) || ""}
+                    value={row.break_end?.slice(0, 5) || ""}
                     onChange={(e) =>
                       updateLocal(day, "break_end", e.target.value || null)
                     }
@@ -137,7 +193,7 @@ export default function BarberAvailabilityPage() {
                   <label className="flex items-center gap-2 text-sm font-black">
                     <input
                       type="checkbox"
-                      checked={row?.active ?? true}
+                      checked={row.active}
                       onChange={(e) =>
                         updateLocal(day, "active", e.target.checked)
                       }
@@ -148,9 +204,10 @@ export default function BarberAvailabilityPage() {
 
                   <button
                     onClick={() => save(day)}
-                    className="rounded-full bg-[#ff355d] px-5 py-3 text-sm font-black text-white"
+                    disabled={savingDay === day}
+                    className="rounded-full bg-[#ff355d] px-5 py-3 text-sm font-black text-white disabled:opacity-50"
                   >
-                    Save
+                    {savingDay === day ? "Saving..." : "Save"}
                   </button>
                 </div>
               </div>

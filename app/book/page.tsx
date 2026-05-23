@@ -22,7 +22,7 @@ import type { Booking } from "@/app/lib/bookingStore";
 import type { CustomerBarber } from "@/app/lib/barbersStore";
 import { getBarberByIdFromSupabase } from "@/app/lib/barbersSupabase";
 import { getServicesFromSupabase, type Service } from "@/app/lib/servicesStore";
-import { generateSlotsForDate } from "@/app/lib/availabilityStore";
+import { generateSlotsForDateFromSupabase } from "@/app/lib/availabilityStore";
 import { getReservedTimesForBarber } from "@/app/lib/availabilitySupabase";
 import { readSalonSettings } from "@/app/lib/salonSettingsStore";
 import { fmtMoney } from "@/app/lib/formatters";
@@ -233,14 +233,30 @@ function BookPageInner() {
 
   const salon = useMemo(() => readSalonSettings(), [tick]);
 
-  const slots = useMemo(() => {
-    if (!service || !barberId || !date) return [];
+  const [slots, setSlots] = useState<string[]>([]);
 
-    const generated = generateSlotsForDate(barberId, date, service.durationMin);
+useEffect(() => {
+  async function loadSlots() {
+    if (!service || !barberId || !date) {
+      setSlots([]);
+      return;
+    }
+
+    const generated = await generateSlotsForDateFromSupabase(
+      barberId,
+      date,
+      service.durationMin
+    );
+
     const taken = new Set(reservedFromDb);
 
-    return generated.filter((slot) => !taken.has(slot));
-  }, [barberId, date, service, reservedFromDb, tick]);
+    const filtered = generated.filter((slot) => !taken.has(slot));
+
+    setSlots(filtered);
+  }
+
+  loadSlots();
+}, [barberId, date, service, reservedFromDb, tick]);
 
   useEffect(() => {
     if (!time) return;

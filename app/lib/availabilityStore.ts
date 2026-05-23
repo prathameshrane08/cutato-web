@@ -1,7 +1,7 @@
 "use client";
 
 import { emitStoreUpdate } from "@/app/lib/storeEvents";
-
+import { supabase } from "@/app/lib/supabase";
 export type DayName = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 
 export type DayRule = {
@@ -373,6 +373,54 @@ export function generateSlotsForDate(barberId: string, date: string, durationMin
     if (ok) {
       slots.push(minToHm(cur));
     }
+  }
+
+  return slots;
+}
+
+export async function generateSlotsForDateFromSupabase(
+  barberId: string,
+  date: string,
+  durationMin = 30
+): Promise<string[]> {
+  const [y, m, d] = date.split("-").map(Number);
+  const dayOfWeek = new Date(y, m - 1, d).getDay();
+
+  const { data: rule, error } = await supabase
+    .from("barber_working_hours")
+    .select("*")
+    .eq("barber_id", barberId)
+    .eq("day_of_week", dayOfWeek)
+    .maybeSingle();
+
+  if (error) {
+    console.error("WORKING HOURS ERROR:", error.message);
+    return [];
+  }
+
+  if (!rule || rule.active === false) return [];
+
+  const step = 30;
+  const start = hmToMin(String(rule.start_time).slice(0, 5));
+  const end = hmToMin(String(rule.end_time).slice(0, 5));
+  const latest = end - durationMin;
+
+  const slots: string[] = [];
+
+  for (let cur = start; cur <= latest; cur += step) {
+    const bookingStart = cur;
+    const bookingEnd = cur + durationMin;
+
+    if (rule.break_start && rule.break_end) {
+      const breakStart = hmToMin(String(rule.break_start).slice(0, 5));
+      const breakEnd = hmToMin(String(rule.break_end).slice(0, 5));
+
+      if (bookingStart < breakEnd && bookingEnd > breakStart) {
+        continue;
+      }
+    }
+
+    slots.push(minToHm(cur));
   }
 
   return slots;
