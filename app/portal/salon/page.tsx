@@ -19,7 +19,7 @@ import type { Booking } from "@/app/lib/bookingStore";
 import { getAllBookingsFromSupabase } from "@/app/lib/bookingsSupabase";
 import { readSalonSettings } from "@/app/lib/salonSettingsStore";
 import { subscribeStoreUpdates } from "@/app/lib/storeEvents";
-import { requireSalonAuth } from "@/app/portal/_lib/portalAuth";
+
 
 function fmtEUR(v: number) {
   return new Intl.NumberFormat("de-DE", {
@@ -45,22 +45,6 @@ function statusLabel(s?: Booking["status"]) {
 }
 
 export default function SalonDashboardPage() {
-  const auth = requireSalonAuth();
-
-  if (!auth.ok) {
-    return (
-      <WebShell title="Access denied" subtitle="Salon account required.">
-        <div className="mx-auto max-w-4xl rounded-[32px] border border-black/10 bg-white p-8 shadow-sm">
-          <h2 className="text-2xl font-black">
-            {auth.reason === "not_logged_in" ? "Please log in" : "Wrong account type"}
-          </h2>
-          <p className="mt-2 text-neutral-500">
-            This page is only available for salon accounts.
-          </p>
-        </div>
-      </WebShell>
-    );
-  }
   const router = useRouter();
   const supabase = createClient();
   const { barbers } = useCustomerBarbers();
