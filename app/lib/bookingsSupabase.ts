@@ -6,17 +6,23 @@ import type { Booking, BookingStatus } from "@/app/lib/bookingStore";
 export type SupabaseBooking = {
   id: string;
   created_at: string;
+
   user_id: string | null;
+  customer_id: string | null;
+
+  salon_id: string | null;
 
   barber_id: string;
   barber_name: string;
 
   service_id: string;
   service_name: string;
+
   duration_min: number;
 
   date: string;
   time: string;
+
   reserved_time: string[] | null;
 
   demand: "quiet" | "normal" | "busy" | null;
@@ -27,14 +33,20 @@ export type SupabaseBooking = {
   total_euro: number;
 
   payment_method: "online" | "salon";
+  payment_status: string | null;
+
   user_email: string;
 
   status: BookingStatus;
+
   assigned_barber_id: string | null;
 
   reference_image: string | null;
   haircut_brief: string | null;
   ai_style: string | null;
+
+  cancelled_at: string | null;
+  completed_at: string | null;
 };
 
 export function mapSupabaseBooking(row: SupabaseBooking): Booking {
@@ -97,8 +109,19 @@ export function mapBookingToSupabase(b: Booking) {
     total_euro: Number(b.totalEuro || 0),
 
     payment_method: b.paymentMethod || "salon",
+
+    payment_status:
+      (b as any).paymentStatus || "unpaid",
+
     user_email: b.userEmail,
+
     user_id: (b as any).userId || null,
+
+    customer_id:
+      (b as any).customerId || null,
+
+    salon_id:
+      (b as any).salonId || null,
 
     status: b.status || "pending",
     assigned_barber_id: b.assignedBarberId || b.barberId,
