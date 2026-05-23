@@ -183,6 +183,12 @@ export default function SalonBarbersPage() {
                   >
                     View barber profile
                   </Link>
+                  <Link
+                    href={`/portal/salon/barbers/${barber.id}/availability`}
+                    className="mt-3 inline-flex w-full items-center justify-center rounded-full bg-[#ff355d] px-5 py-3 text-sm font-black text-white shadow-lg shadow-[#ff355d]/20 transition hover:bg-[#ff1f4c]"
+                  >
+                    Set availability
+                  </Link>
                 </div>
               </div>
             </div>
