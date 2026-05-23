@@ -253,3 +253,18 @@ export async function updateBookingAssignmentInSupabase(
 
   if (error) throw error;
 }
+
+export async function getSalonBookingsFromSupabase(salonId: string) {
+  const { data, error } = await supabase
+    .from("bookings")
+    .select("*")
+    .eq("salon_id", salonId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("SALON BOOKINGS ERROR:", error.message);
+    return [];
+  }
+
+  return data || [];
+}

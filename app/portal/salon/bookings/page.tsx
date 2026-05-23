@@ -2,18 +2,19 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+
 import WebShell from "@/app/Components/WebShell";
 import type { CustomerBarber } from "@/app/lib/barbersStore";
 import { getBarbersFromSupabase } from "@/app/lib/barbersSupabase";
 import type { Booking, BookingStatus } from "@/app/lib/bookingStore";
 import {
-  getAllBookingsFromSupabase,
+  getSalonBookingsFromSupabase,
   updateBookingStatusInSupabase,
   updateBookingAssignmentInSupabase,
 } from "@/app/lib/bookingsSupabase";
 import { readSalonSettings } from "@/app/lib/salonSettingsStore";
 import { fmtMoney, statusLabel, statusPillStyle } from "@/app/lib/formatters";
-import { requireSalonAuth } from "@/app/portal/_lib/portalAuth";
 import { supabase } from "@/app/lib/supabase";
 import { subscribeToBookings } from "@/app/lib/realtime";
 
@@ -25,84 +26,96 @@ function todayKey() {
 }
 
 export default function SalonBookingsAdminPage() {
-  const auth = requireSalonAuth();
-
-  if (!auth.ok) {
-    return (
-      <WebShell title="Access denied" subtitle="You do not have permission to open this page.">
-        <div className="mx-auto max-w-4xl">
-          <div className="theme-card" style={{ padding: 18 }}>
-            <div style={{ fontWeight: 900, fontSize: 18 }}>
-              {auth.reason === "not_logged_in" ? "Please log in" : "Wrong account type"}
-            </div>
-            <div className="theme-muted" style={{ marginTop: 8 }}>
-              This page is only available for salon accounts.
-            </div>
-          </div>
-        </div>
-      </WebShell>
-    );
-  }
-
+  const router = useRouter();
   const salon = useMemo(() => readSalonSettings(), []);
-  const [barbers, setBarbers] = useState<CustomerBarber[]>([]);
 
+  const [salonId, setSalonId] = useState<string | null>(null);
+  const [barbers, setBarbers] = useState<CustomerBarber[]>([]);
   const [all, setAll] = useState<Booking[]>([]);
+
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | BookingStatus>("all");
-  const [dateFilter, setDateFilter] = useState<"all" | "today" | "future" | "past">("future");
-  
-  async function loadAll() {
-  try {
-    const [bookingRows, barberRows] = await Promise.all([
-      getAllBookingsFromSupabase(),
-      getBarbersFromSupabase(),
-    ]);
+  const [dateFilter, setDateFilter] = useState<"all" | "today" | "future" | "past">(
+    "future"
+  );
+  const [loading, setLoading] = useState(true);
 
-    setAll(bookingRows);
+  async function getSalonIdForCurrentUser() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    setBarbers(
-      barberRows.map((b) => ({
-        id: b.id,
-        name: b.name,
-        area: b.area,
-        address: b.address,
-        distKm: Number(b.dist_km ?? 0),
-        rating: Number(b.rating ?? 0),
-        reviews: Number(b.reviews ?? 0),
-        tagline: b.tagline ?? undefined,
-        about: b.about ?? undefined,
-        imageUrl: b.image_url ?? undefined,
-        speciality: b.speciality ?? undefined,
-        active: b.active ?? true,
-      }))
-    );
-  } catch (err) {
-    console.error("Failed to load salon booking data:", err);
-    setAll([]);
-    setBarbers([]);
+    if (!user) {
+      router.replace("/portal/salon/login");
+      return null;
+    }
+
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select("role, salon_id")
+      .eq("id", user.id)
+      .single();
+
+    if (error || !profile || profile.role !== "salon" || !profile.salon_id) {
+      await supabase.auth.signOut();
+      router.replace("/portal/salon/login");
+      return null;
+    }
+
+    setSalonId(profile.salon_id);
+    return profile.salon_id as string;
   }
-}
 
-  useEffect(() => {
-  async function loadBookings() {
+  async function loadAll() {
     try {
-      const data = await getAllBookingsFromSupabase();
-      setAll(data);
+      setLoading(true);
+
+      const currentSalonId = salonId || (await getSalonIdForCurrentUser());
+      if (!currentSalonId) return;
+
+      const [bookingRows, barberRows] = await Promise.all([
+        getSalonBookingsFromSupabase(currentSalonId),
+        getBarbersFromSupabase(),
+      ]);
+
+      setAll(bookingRows as Booking[]);
+
+      setBarbers(
+        barberRows
+          .filter((b: any) => b.salon_id === currentSalonId)
+          .map((b: any) => ({
+            id: b.id,
+            name: b.name,
+            area: b.area,
+            address: b.address,
+            distKm: Number(b.dist_km ?? 0),
+            rating: Number(b.rating ?? 0),
+            reviews: Number(b.reviews ?? 0),
+            tagline: b.tagline ?? undefined,
+            about: b.about ?? undefined,
+            imageUrl: b.image_url ?? undefined,
+            speciality: b.speciality ?? undefined,
+            active: b.active ?? true,
+          }))
+      );
     } catch (err) {
-      console.error("Failed to load salon bookings:", err);
+      console.error("Failed to load salon booking data:", err);
       setAll([]);
+      setBarbers([]);
+    } finally {
+      setLoading(false);
     }
   }
 
-  loadBookings();
+  useEffect(() => {
+    loadAll();
 
-  const unsubscribe = subscribeToBookings(() => {
-    loadBookings();
-  });
+    const unsubscribe = subscribeToBookings(() => {
+      loadAll();
+    });
 
-  return unsubscribe;
-}, []);
+    return unsubscribe;
+  }, []);
 
   const counts = useMemo(() => {
     const base = all.map((b) => ({
@@ -111,9 +124,17 @@ export default function SalonBookingsAdminPage() {
     }));
 
     const by: Record<string, number> = { all: base.length };
-    for (const s of ["pending", "confirmed", "completed", "cancelled", "no_show"] as BookingStatus[]) {
+
+    for (const s of [
+      "pending",
+      "confirmed",
+      "completed",
+      "cancelled",
+      "no_show",
+    ] as BookingStatus[]) {
       by[s] = base.filter((b) => b.status === s).length;
     }
+
     return by;
   }, [all]);
 
@@ -156,30 +177,25 @@ export default function SalonBookingsAdminPage() {
   }, [all, q, statusFilter, dateFilter]);
 
   async function assignBarber(id: string, barberId: string) {
-  try {
-    const barber = barbers.find((x) => x.id === barberId);
+    try {
+      const barber = barbers.find((x) => x.id === barberId);
 
-    await updateBookingAssignmentInSupabase(
-      id,
-      barberId,
-      barber?.name ?? "Unknown"
-    );
+      await updateBookingAssignmentInSupabase(id, barberId, barber?.name ?? "Unknown");
 
-    await loadAll();
-  } catch (err) {
-    console.error("Failed to assign barber:", err);
+      await loadAll();
+    } catch (err) {
+      console.error("Failed to assign barber:", err);
+    }
   }
-}
 
   async function patchStatus(id: string, status: BookingStatus) {
-  try {
-    await updateBookingStatusInSupabase(id, status);
-
-    await loadAll();
-  } catch (err) {
-    console.error("Failed to update booking status:", err);
+    try {
+      await updateBookingStatusInSupabase(id, status);
+      await loadAll();
+    } catch (err) {
+      console.error("Failed to update booking status:", err);
+    }
   }
-}
 
   const chip = (active: boolean): React.CSSProperties => ({
     padding: "8px 12px",
@@ -192,6 +208,16 @@ export default function SalonBookingsAdminPage() {
     whiteSpace: "nowrap",
   });
 
+  if (loading) {
+    return (
+      <WebShell title="Salon Bookings" subtitle="Loading salon bookings...">
+        <div className="mx-auto max-w-6xl rounded-[28px] border border-black/10 bg-white p-8 shadow-sm">
+          Loading bookings...
+        </div>
+      </WebShell>
+    );
+  }
+
   return (
     <WebShell title="Salon Bookings" subtitle={`Manage bookings for ${salon.salonName}`}>
       <div className="mx-auto max-w-6xl">
@@ -200,17 +226,17 @@ export default function SalonBookingsAdminPage() {
             <Link href="/portal/salon" className="btn btn-secondary" style={{ height: 42 }}>
               ← Dashboard
             </Link>
+
             <Link href="/portal/salon/calendar" className="btn btn-secondary" style={{ height: 42 }}>
               Calendar
             </Link>
-            <Link href="/portal/salon/staff" className="btn btn-secondary" style={{ height: 42 }}>
+
+            <Link href="/portal/salon/barbers" className="btn btn-secondary" style={{ height: 42 }}>
               Staff
             </Link>
+
             <Link href="/portal/salon/services" className="btn btn-secondary" style={{ height: 42 }}>
               Services
-            </Link>
-            <Link href="/portal/salon/availability" className="btn btn-secondary" style={{ height: 42 }}>
-              Availability
             </Link>
           </div>
 
@@ -227,18 +253,23 @@ export default function SalonBookingsAdminPage() {
               <button style={chip(statusFilter === "all")} onClick={() => setStatusFilter("all")}>
                 All ({counts.all})
               </button>
+
               <button style={chip(statusFilter === "pending")} onClick={() => setStatusFilter("pending")}>
                 Pending ({counts.pending})
               </button>
+
               <button style={chip(statusFilter === "confirmed")} onClick={() => setStatusFilter("confirmed")}>
                 Confirmed ({counts.confirmed})
               </button>
+
               <button style={chip(statusFilter === "completed")} onClick={() => setStatusFilter("completed")}>
                 Completed ({counts.completed})
               </button>
+
               <button style={chip(statusFilter === "cancelled")} onClick={() => setStatusFilter("cancelled")}>
                 Cancelled ({counts.cancelled})
               </button>
+
               <button style={chip(statusFilter === "no_show")} onClick={() => setStatusFilter("no_show")}>
                 No-show ({counts.no_show})
               </button>
@@ -247,7 +278,9 @@ export default function SalonBookingsAdminPage() {
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               <select
                 value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value as "all" | "today" | "future" | "past")}
+                onChange={(e) =>
+                  setDateFilter(e.target.value as "all" | "today" | "future" | "past")
+                }
                 className="input"
                 style={{ height: 42, borderRadius: 14, padding: "0 12px", minWidth: 140 }}
               >
@@ -272,6 +305,7 @@ export default function SalonBookingsAdminPage() {
 
         <div className="theme-card" style={{ padding: 16 }}>
           <div style={{ fontWeight: 950, fontSize: 16 }}>Bookings</div>
+
           <div className="theme-muted" style={{ marginTop: 6, fontSize: 13 }}>
             {visible.length} result(s)
           </div>
@@ -301,17 +335,21 @@ export default function SalonBookingsAdminPage() {
                       <div style={{ fontWeight: 950 }}>
                         {b.date} • {b.time} • {b.serviceName}
                       </div>
+
                       <div className="theme-muted" style={{ marginTop: 4, fontSize: 13 }}>
                         Customer: <b>{b.userEmail}</b> • Payment:{" "}
                         {b.paymentMethod === "online" ? "Online" : "At salon"}
                       </div>
+
                       <div className="theme-muted" style={{ marginTop: 4, fontSize: 12 }}>
-                        ID: {b.id} • Reserved: {b.reservedTimes?.length ? b.reservedTimes.join(", ") : b.time}
+                        ID: {b.id} • Reserved:{" "}
+                        {b.reservedTimes?.length ? b.reservedTimes.join(", ") : b.time}
                       </div>
                     </div>
 
                     <div style={{ display: "grid", justifyItems: "end", gap: 6 }}>
                       <span style={statusPillStyle(b.status)}>{statusLabel(b.status)}</span>
+
                       <div style={{ fontWeight: 950 }}>
                         {fmtMoney(Number(b.totalEuro) || 0, salon.currency)}
                       </div>
@@ -336,7 +374,9 @@ export default function SalonBookingsAdminPage() {
                       <div className="theme-muted" style={{ fontSize: 12, fontWeight: 900 }}>
                         Assign barber
                       </div>
+
                       <div style={{ height: 8 }} />
+
                       <select
                         className="input"
                         style={{ height: 42, borderRadius: 14, padding: "0 12px", width: "100%" }}
@@ -362,7 +402,9 @@ export default function SalonBookingsAdminPage() {
                       <div className="theme-muted" style={{ fontSize: 12, fontWeight: 900 }}>
                         Status
                       </div>
+
                       <div style={{ height: 8 }} />
+
                       <select
                         className="input"
                         style={{ height: 42, borderRadius: 14, padding: "0 12px", width: "100%" }}
@@ -396,12 +438,15 @@ export default function SalonBookingsAdminPage() {
                         <button className="btn btn-secondary" onClick={() => patchStatus(b.id, "confirmed")}>
                           Confirm
                         </button>
+
                         <button className="btn btn-secondary" onClick={() => patchStatus(b.id, "completed")}>
                           Complete
                         </button>
+
                         <button className="btn btn-secondary" onClick={() => patchStatus(b.id, "no_show")}>
                           No-show
                         </button>
+
                         <button className="btn btn-secondary" onClick={() => patchStatus(b.id, "cancelled")}>
                           Cancel
                         </button>
@@ -413,6 +458,7 @@ export default function SalonBookingsAdminPage() {
                     <div className="theme-muted" style={{ fontSize: 12 }}>
                       Current barber: <b>{b.barberName}</b> ({b.barberId})
                     </div>
+
                     <div className="theme-muted" style={{ fontSize: 12 }}>
                       Base: {fmtMoney(Number(b.basePriceEuro) || 0, salon.currency)} • Tip:{" "}
                       {fmtMoney(Number(b.tipEuro) || 0, salon.currency)} • Total:{" "}
