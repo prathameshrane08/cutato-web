@@ -35,7 +35,21 @@ function fallbackReply(message: string, pathname: string) {
     return "OPEN_BOOKINGS\nYou can view and manage your appointments from My bookings.";
   }
 
-  if (m.includes("home") || m.includes("barbers")) {
+  if (
+    m.includes("cheapest") ||
+    m.includes("lowest price") ||
+    m.includes("cheap barber") ||
+    m.includes("budget barber")
+  ) {
+    return "For cheapest barber, I compare active barbers by their lowest assigned service price. Please check the current services list or barber cards for the latest result.";
+  }
+
+  if (
+    m.includes("show barbers") ||
+    m.includes("list barbers") ||
+    m.includes("open barbers") ||
+    m.includes("home")
+  ) {
     return "OPEN_HOME\nI’ll take you to the barber discovery page.";
   }
 
@@ -71,10 +85,13 @@ function fallbackReply(message: string, pathname: string) {
     return "Salon owners can manage staff, services, bookings, assignments, availability, and booking statuses from the salon portal.";
   }
 
-  if (m.includes("barber")) {
-    return "Barbers can view their dashboard, upcoming appointments, today’s schedule, revenue, and booking statuses.";
+  if (
+    m.includes("barber portal") ||
+    m.includes("barber dashboard") ||
+    m.includes("barber login")
+  ) {
+    return "OPEN_BARBER_PORTAL\nOpening the barber portal.";
   }
-
   return "I can help with booking, payments, cancellations, barber profiles, salon tools, and your appointments.";
 }
 
