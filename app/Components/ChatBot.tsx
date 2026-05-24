@@ -7,6 +7,7 @@ import {
   getDefaultQuickActions,
   getWelcomeMessage,
   replyToChat,
+  replyToChatTry,
   type ChatMessage,
 } from "@/app/lib/ChatBot";
 import { getBestActiveBarberFromSupabase } from "@/app/lib/barbersSupabase";
@@ -280,61 +281,73 @@ export default function ChatBot() {
   }
 
   async function appendBotReply(trimmed: string) {
-    setIsTyping(true);
+  setIsTyping(true);
 
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: trimmed,
-          pathname,
-        }),
-      });
+  try {
+    const local = replyToChatTry(trimmed);
 
-      const data = await res.json();
-
-      const replyText =
-        typeof data?.text === "string"
-          ? data.text
-          : "Sorry, I couldn't process that.";
-
-      if (handleAssistantCommand(replyText, trimmed)) {
-  return;
-}
-
+    if (
+      local?.text &&
+      !local.text.toLowerCase().includes("not fully sure what you mean yet")
+    ) {
       const botMsg: ChatMessage = {
         id: uid("bot"),
         role: "bot",
-        text: replyText,
+        text: local.text,
         createdAt: new Date().toISOString(),
       };
 
       setMessages((prev) => [...prev, botMsg]);
-    } catch (err) {
-      console.error("AI chat failed:", err);
-
-      const fallback = replyToChat(trimmed);
-
-      const fallbackText =
-        typeof fallback === "string"
-          ? fallback
-          : (fallback as any)?.text || "Something went wrong.";
-
-      const botMsg: ChatMessage = {
-        id: uid("bot"),
-        role: "bot",
-        text: fallbackText,
-        createdAt: new Date().toISOString(),
-      };
-
-      setMessages((prev) => [...prev, botMsg]);
-    } finally {
-      setIsTyping(false);
+      return;
     }
+
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: trimmed,
+        pathname,
+      }),
+    });
+
+    const data = await res.json();
+
+    const replyText =
+      typeof data?.text === "string"
+        ? data.text
+        : "Sorry, I couldn't process that.";
+
+    if (handleAssistantCommand(replyText, trimmed)) {
+      return;
+    }
+
+    const botMsg: ChatMessage = {
+      id: uid("bot"),
+      role: "bot",
+      text: replyText,
+      createdAt: new Date().toISOString(),
+    };
+
+    setMessages((prev) => [...prev, botMsg]);
+  } catch (err) {
+    console.error("Chat failed:", err);
+
+    const fallback = replyToChat(trimmed);
+
+    const botMsg: ChatMessage = {
+      id: uid("bot"),
+      role: "bot",
+      text: fallback || "Something went wrong.",
+      createdAt: new Date().toISOString(),
+    };
+
+    setMessages((prev) => [...prev, botMsg]);
+  } finally {
+    setIsTyping(false);
   }
+}
 
   function pushUserMessage(text: string) {
     const trimmed = text.trim();
