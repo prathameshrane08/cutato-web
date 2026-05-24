@@ -9,7 +9,6 @@ export type SupabaseBooking = {
 
   user_id: string | null;
   customer_id: string | null;
-
   salon_id: string | null;
 
   barber_id: string;
@@ -17,12 +16,10 @@ export type SupabaseBooking = {
 
   service_id: string;
   service_name: string;
-
   duration_min: number;
 
   date: string;
   time: string;
-
   reserved_time: string[] | null;
 
   demand: "quiet" | "normal" | "busy" | null;
@@ -36,7 +33,6 @@ export type SupabaseBooking = {
   payment_status: string | null;
 
   user_email: string;
-
   status: BookingStatus;
 
   assigned_barber_id: string | null;
@@ -74,7 +70,6 @@ export function mapSupabaseBooking(row: SupabaseBooking): Booking {
 
     paymentMethod: row.payment_method || "salon",
     userEmail: row.user_email,
-    
 
     status: row.status || "pending",
     assignedBarberId: row.assigned_barber_id || row.barber_id,
@@ -109,19 +104,12 @@ export function mapBookingToSupabase(b: Booking) {
     total_euro: Number(b.totalEuro || 0),
 
     payment_method: b.paymentMethod || "salon",
-
-    payment_status:
-      (b as any).paymentStatus || "unpaid",
+    payment_status: (b as any).paymentStatus || "unpaid",
 
     user_email: b.userEmail,
-
     user_id: (b as any).userId || null,
-
-    customer_id:
-      (b as any).customerId || null,
-
-    salon_id:
-      (b as any).salonId || null,
+    customer_id: (b as any).customerId || null,
+    salon_id: (b as any).salonId || null,
 
     status: b.status || "pending",
     assigned_barber_id: b.assignedBarberId || b.barberId,
@@ -129,15 +117,13 @@ export function mapBookingToSupabase(b: Booking) {
     reference_image: b.referenceImage ?? null,
     haircut_brief: b.haircutBrief ?? null,
     ai_style: b.aiStyle ?? null,
-      };
+  };
 }
 
 export async function createBookingInSupabase(b: Booking): Promise<Booking> {
   const payload = mapBookingToSupabase(b);
 
-  const { error } = await supabase
-    .from("bookings")
-    .insert([payload]);
+  const { error } = await supabase.from("bookings").insert([payload]);
 
   if (error) {
     console.error("SUPABASE BOOKING ERROR MESSAGE:", error.message);
@@ -169,10 +155,13 @@ export async function getBookingsForUser(email: string): Promise<Booking[]> {
   return ((data ?? []) as SupabaseBooking[]).map(mapSupabaseBooking);
 }
 
-export async function getBookingsForBarber(barberId: string): Promise<Booking[]> {
+export async function getBookingsForBarber(
+  barberId: string
+): Promise<Booking[]> {
   const { data, error } = await supabase
     .from("bookings")
     .select("*")
+    .or(`barber_id.eq.${barberId},assigned_barber_id.eq.${barberId}`)
     .order("date", { ascending: true })
     .order("time", { ascending: true });
 
@@ -197,30 +186,22 @@ export async function getAllBookingsFromSupabase(): Promise<Booking[]> {
   return ((data ?? []) as SupabaseBooking[]).map(mapSupabaseBooking);
 }
 
-export async function updateBookingStatusInSupabase(
-  id: string,
-  status: BookingStatus
-): Promise<void> {
-  const { error } = await supabase
-    .from("bookings")
-    .update({ status })
-    .eq("id", id);
-
-  if (error) throw error;
-}
-
-export async function getBookingByIdFromSupabase(id: string): Promise<Booking | null> {
+export async function getSalonBookingsFromSupabase(
+  salonId: string
+): Promise<Booking[]> {
   const { data, error } = await supabase
     .from("bookings")
     .select("*")
-    .eq("id", id)
-    .maybeSingle();
+    .eq("salon_id", salonId)
+    .order("date", { ascending: true })
+    .order("time", { ascending: true });
 
   if (error) {
-    throw error;
+    console.error("GET SALON BOOKINGS ERROR:", error.message);
+    return [];
   }
 
-  return data ? mapSupabaseBooking(data as SupabaseBooking) : null;
+  return ((data ?? []) as SupabaseBooking[]).map(mapSupabaseBooking);
 }
 
 export async function getBookingsFromSupabase(): Promise<Booking[]> {
@@ -235,6 +216,42 @@ export async function getBookingsFromSupabase(): Promise<Booking[]> {
   }
 
   return ((data ?? []) as SupabaseBooking[]).map(mapSupabaseBooking);
+}
+
+export async function getBookingByIdFromSupabase(
+  id: string
+): Promise<Booking | null> {
+  const { data, error } = await supabase
+    .from("bookings")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  return data ? mapSupabaseBooking(data as SupabaseBooking) : null;
+}
+
+export async function updateBookingStatusInSupabase(
+  id: string,
+  status: BookingStatus
+): Promise<void> {
+  const patch: any = { status };
+
+  if (status === "completed") {
+    patch.completed_at = new Date().toISOString();
+  }
+
+  if (status === "cancelled") {
+    patch.cancelled_at = new Date().toISOString();
+  }
+
+  const { error } = await supabase
+    .from("bookings")
+    .update(patch)
+    .eq("id", id);
+
+  if (error) throw error;
 }
 
 export async function updateBookingAssignmentInSupabase(
@@ -252,19 +269,4 @@ export async function updateBookingAssignmentInSupabase(
     .eq("id", id);
 
   if (error) throw error;
-}
-
-export async function getSalonBookingsFromSupabase(salonId: string) {
-  const { data, error } = await supabase
-    .from("bookings")
-    .select("*")
-    .eq("salon_id", salonId)
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    console.error("SALON BOOKINGS ERROR:", error.message);
-    return [];
-  }
-
-  return data || [];
 }

@@ -391,6 +391,10 @@ useEffect(() => {
 
         assignedBarberId: barber.id,
 
+        salonId: (barber as any).salonId,
+        customerId: authUser.id,
+        paymentStatus: paymentMethod === "online" ? "unpaid" : "pay_at_salon",
+
         referenceImage: aiHair?.image,
         haircutBrief: aiHair?.barberBrief,
         aiStyle: aiHair?.style,
