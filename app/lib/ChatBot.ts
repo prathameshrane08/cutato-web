@@ -46,8 +46,17 @@ function tokenize(s: string) {
 }
 
 function includesAny(haystack: string, words: string[]) {
-  const x = normalize(haystack);
-  return words.some((w) => x.includes(normalize(w)));
+  const tokens = tokenize(haystack);
+
+  return words.some((word) => {
+    const target = normalize(word);
+
+    if (target.includes(" ")) {
+      return normalize(haystack).includes(target);
+    }
+
+    return tokens.includes(target);
+  });
 }
 
 function formatMoney(v: number, currency = "EUR") {
