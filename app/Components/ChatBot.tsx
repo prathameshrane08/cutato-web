@@ -322,6 +322,46 @@ export default function ChatBot() {
       }),
     });
 
+    if (!res.body) {
+      throw new Error("No response body");
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+
+    let streamedText = "";
+
+    const botId = uid("bot");
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: botId,
+        role: "bot",
+        text: "",
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) break;
+
+      streamedText += decoder.decode(value);
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === botId
+            ? {
+                ...m,
+                text: streamedText,
+              }
+            : m
+        )
+      );
+    }
+
     const data = await res.json();
 
     const replyText =
