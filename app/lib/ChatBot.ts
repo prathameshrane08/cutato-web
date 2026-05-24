@@ -393,7 +393,10 @@ export function replyToChatTry(input: string): ChatBotResponse {
     };
   }
 
-  if (includesAny(q, ["tell me about", "who is", "barber profile", "profile of", "about barber"])) {
+  if (
+    includesAny(q, ["barber profile", "profile of", "about barber"]) ||
+    barbers.some((b) => q.includes(b.name.toLowerCase()))
+  ) {
     const barber = findBarberFromQuery(q, barbers);
 
     if (!barber) {
