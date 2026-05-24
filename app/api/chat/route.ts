@@ -92,19 +92,10 @@ You can:
 - guide users through bookings
 - answer casually and naturally
 
-Cutato platform features:
-- barber discovery
-- appointment booking
-- online/salon payment
-- booking management
-- salon dashboards
-- barber dashboards
-
 Rules:
-- Keep answers useful, modern, and conversational.
+- Keep answers useful and conversational.
 - Keep answers concise unless user asks for detail.
 - Do not invent private booking data.
-- For grooming/haircare questions, answer normally like an expert assistant.
 - For general knowledge questions, behave like ChatGPT.
 
 Navigation commands:
@@ -145,7 +136,65 @@ ${message}
       });
     }
 
-    return new Response(response.body, {
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        const reader = response.body!.getReader();
+
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+
+          if (done) {
+            controller.close();
+            break;
+          }
+
+          buffer += decoder.decode(value, {
+            stream: true,
+          });
+
+          const lines = buffer.split("\n");
+
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+
+            if (!trimmed.startsWith("data:")) {
+              continue;
+            }
+
+            const json = trimmed.replace(/^data:\s*/, "");
+
+            if (json === "[DONE]") {
+              controller.close();
+              return;
+            }
+
+            try {
+              const parsed = JSON.parse(json);
+
+              const token =
+                parsed?.choices?.[0]?.delta?.content || "";
+
+              if (token) {
+                controller.enqueue(
+                  encoder.encode(token)
+                );
+              }
+            } catch (err) {
+              console.error("Stream parse error:", err);
+            }
+          }
+        }
+      },
+    });
+
+    return new Response(stream, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
         "Cache-Control": "no-cache",

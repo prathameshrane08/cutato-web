@@ -22,6 +22,8 @@ import { getBestActiveBarberFromSupabase } from "@/app/lib/barbersSupabase";
 import { getBestServiceForBarberFromSupabase } from "@/app/lib/servicesStore";
 import { generateSlotsForDate } from "@/app/lib/availabilityStore";
 import { getReservedTimesForBarber } from "@/app/lib/availabilitySupabase";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 function uid(prefix = "chat") {
   return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
@@ -92,7 +94,21 @@ export default function ChatBot() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([getWelcomeMessage()]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    if (typeof window === "undefined") {
+      return [getWelcomeMessage()];
+    }
+
+    const saved = localStorage.getItem("cutato_ai_chat");
+
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {}
+    }
+
+    return [getWelcomeMessage()];
+  });
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [isRecording, setIsRecording] = useState(false);
 
@@ -140,6 +156,13 @@ export default function ChatBot() {
       behavior: "smooth",
     });
   }, [messages, isTyping, open]);
+
+  useEffect(() => {
+  localStorage.setItem(
+    "cutato_ai_chat",
+    JSON.stringify(messages)
+  );
+}, [messages]);
 
   function navigateFromCommand(prompt: string) {
     if (prompt.startsWith("open_profile_")) {
@@ -290,7 +313,7 @@ export default function ChatBot() {
     return false;
   }
 
-  async function appendBotReply(trimmed: string) {
+async function appendBotReply(trimmed: string) {
   setIsTyping(true);
 
   try {
@@ -298,7 +321,9 @@ export default function ChatBot() {
 
     if (
       local?.text &&
-      !local.text.toLowerCase().includes("not fully sure what you mean yet")
+      !local.text.toLowerCase().includes(
+        "not fully sure what you mean yet"
+      )
     ) {
       const botMsg: ChatMessage = {
         id: uid("bot"),
@@ -321,6 +346,10 @@ export default function ChatBot() {
         pathname,
       }),
     });
+
+    if (!res.ok) {
+      throw new Error("Streaming request failed");
+    }
 
     if (!res.body) {
       throw new Error("No response body");
@@ -348,39 +377,33 @@ export default function ChatBot() {
 
       if (done) break;
 
-      streamedText += decoder.decode(value);
+      streamedText += decoder.decode(value, {
+        stream: true,
+      });
+
+      const cleanText = streamedText
+        .replace(/^data:\s*/gm, "")
+        .replace(/\[DONE\]/g, "")
+        .trim();
 
       setMessages((prev) =>
         prev.map((m) =>
           m.id === botId
             ? {
                 ...m,
-                text: streamedText,
+                text: cleanText,
               }
             : m
         )
       );
     }
 
-    const data = await res.json();
+    const finalText = streamedText
+      .replace(/^data:\s*/gm, "")
+      .replace(/\[DONE\]/g, "")
+      .trim();
 
-    const replyText =
-      typeof data?.text === "string"
-        ? data.text
-        : "Sorry, I couldn't process that.";
-
-    if (handleAssistantCommand(replyText, trimmed)) {
-      return;
-    }
-
-    const botMsg: ChatMessage = {
-      id: uid("bot"),
-      role: "bot",
-      text: replyText,
-      createdAt: new Date().toISOString(),
-    };
-
-    setMessages((prev) => [...prev, botMsg]);
+    handleAssistantCommand(finalText, trimmed);
   } catch (err) {
     console.error("Chat failed:", err);
 
@@ -430,10 +453,12 @@ export default function ChatBot() {
   }
 
   function resetChat() {
-    setMessages([getWelcomeMessage()]);
-    setInput("");
-    setIsTyping(false);
-  }
+  localStorage.removeItem("cutato_ai_chat");
+
+  setMessages([getWelcomeMessage()]);
+  setInput("");
+  setIsTyping(false);
+}
 
   return (
     <>
@@ -506,14 +531,14 @@ export default function ChatBot() {
                       <Sparkles size={14} />
                     </div>
 
-                    <div className="whitespace-pre-wrap rounded-[22px] rounded-bl-md border border-black/10 bg-white px-4 py-3 text-sm leading-6 text-neutral-900 shadow-sm">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {m.text}
-                    </div>
+                    </ReactMarkdown>
                   </div>
                 ) : (
-                  <div className="max-w-[82%] whitespace-pre-wrap rounded-[22px] rounded-br-md bg-neutral-950 px-4 py-3 text-sm leading-6 text-white shadow-lg">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {m.text}
-                  </div>
+                  </ReactMarkdown>
                 )}
               </div>
             ))}
