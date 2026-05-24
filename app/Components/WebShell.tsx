@@ -187,8 +187,8 @@ setUser(restoredUser);
               <MobileLink href="/" onClick={() => setMobileOpen(false)}>
                 Home
               </MobileLink>
-              <MobileLink href="/book" onClick={() => setMobileOpen(false)}>
-                Book
+              <MobileLink href="/#featured-barbers" onClick={() => setMobileOpen(false)}>
+                Barbers
               </MobileLink>
               <MobileLink href="/bookings" onClick={() => setMobileOpen(false)}>
                 Bookings
