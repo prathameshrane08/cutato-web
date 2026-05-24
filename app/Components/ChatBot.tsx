@@ -2,7 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Bot, RotateCcw, Send, Sparkles, X } from "lucide-react";
+import {
+  Bot,
+  RotateCcw,
+  Send,
+  Sparkles,
+  X,
+  ImagePlus,
+  Mic,
+} from "lucide-react";
 import {
   getDefaultQuickActions,
   getWelcomeMessage,
@@ -85,6 +93,8 @@ export default function ChatBot() {
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([getWelcomeMessage()]);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -484,23 +494,57 @@ export default function ChatBot() {
           </div>
 
           <form onSubmit={onSubmit} className="border-t border-black/10 bg-white p-3">
-            <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-              <input
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Message Cutato Assistant..."
-                className="h-12 rounded-2xl border border-black/10 bg-neutral-50 px-4 text-sm font-bold outline-none transition focus:border-[#ff355d] focus:bg-white"
-              />
+            <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-2">
+            <label className="flex h-12 w-12 cursor-pointer items-center justify-center rounded-2xl border border-black/10 bg-neutral-50 transition hover:bg-neutral-100">
+              <ImagePlus size={18} />
 
-              <button
-                type="submit"
-                disabled={!input.trim() || isTyping}
-                className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ff355d] text-white shadow-lg shadow-[#ff355d]/25 transition hover:bg-[#ff1f4c] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Send size={18} />
-              </button>
-            </div>
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setSelectedImage(file);
+                  }
+                }}
+              />
+            </label>
+
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={
+                selectedImage
+                  ? `Image selected: ${selectedImage.name}`
+                  : "Message Cutato Assistant..."
+              }
+              className="h-12 rounded-2xl border border-black/10 bg-neutral-50 px-4 text-sm font-bold outline-none transition focus:border-[#ff355d] focus:bg-white"
+            />
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsRecording((v) => !v);
+              }}
+              className={`flex h-12 w-12 items-center justify-center rounded-2xl transition ${
+                isRecording
+                  ? "bg-red-500 text-white"
+                  : "border border-black/10 bg-neutral-50"
+              }`}
+            >
+              <Mic size={18} />
+            </button>
+
+            <button
+              type="submit"
+              disabled={(!input.trim() && !selectedImage) || isTyping}
+              className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#ff355d] text-white shadow-lg shadow-[#ff355d]/25 transition hover:bg-[#ff1f4c] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Send size={18} />
+            </button>
+          </div>
 
             <div className="mt-2 flex flex-wrap justify-between gap-2 text-[11px] font-bold text-neutral-400">
               <span>Ask about bookings, barbers, services or portals.</span>
