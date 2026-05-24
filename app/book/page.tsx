@@ -152,19 +152,20 @@ function BookPageInner() {
         }
 
         setBarber({
-          id: b.id,
-          name: b.name,
-          area: b.area,
-          address: b.address,
-          distKm: Number(b.dist_km ?? 0),
-          rating: Number(b.rating ?? 0),
-          reviews: Number(b.reviews ?? 0),
-          tagline: b.tagline ?? undefined,
-          about: b.about ?? undefined,
-          imageUrl: b.image_url ?? undefined,
-          speciality: b.speciality ?? undefined,
-          active: b.active ?? true,
-        });
+        id: b.id,
+        name: b.name,
+        area: b.area,
+        address: b.address,
+        distKm: Number(b.dist_km ?? 0),
+        rating: Number(b.rating ?? 0),
+        reviews: Number(b.reviews ?? 0),
+        tagline: b.tagline ?? undefined,
+        about: b.about ?? undefined,
+        imageUrl: b.image_url ?? undefined,
+        speciality: b.speciality ?? undefined,
+        active: b.active ?? true,
+        salonId: (b as any).salon_id,
+      } as any);
       } catch (err) {
         console.error("Failed to load booking barber:", err);
         setBarber(null);
@@ -394,6 +395,7 @@ useEffect(() => {
         salonId: (barber as any).salonId,
         customerId: authUser.id,
         paymentStatus: paymentMethod === "online" ? "unpaid" : "pay_at_salon",
+
 
         referenceImage: aiHair?.image,
         haircutBrief: aiHair?.barberBrief,

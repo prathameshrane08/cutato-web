@@ -84,6 +84,20 @@ setUser(restoredUser);
 
   return (
     <main className="min-h-screen bg-[#f6f6f7] text-neutral-950">
+      <div className="hidden md:flex h-10 items-center justify-between bg-black px-6 text-xs font-bold text-white">
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-emerald-400" />
+          Live booking active
+        </div>
+
+        <div className="text-neutral-300">
+          AI-powered grooming platform
+        </div>
+
+        <div className="text-neutral-300">
+          Support • Dresden, Germany
+        </div>
+      </div>
       <header className="sticky top-0 z-50 border-b border-black/5 bg-white/80 backdrop-blur-xl">
         <div className="mx-auto flex h-[78px] max-w-7xl items-center justify-between px-4 md:px-6">
           <Link href="/" className="group flex items-center gap-3">
@@ -96,26 +110,21 @@ setUser(restoredUser);
                 CUTATO
               </span>
               <span className="hidden text-xs font-bold text-neutral-400 sm:block">
-                Premium barber platform
+                AI-powered platform
               </span>
             </div>
           </Link>
 
-          <nav className="hidden items-center gap-2 md:flex">
+          <nav className="hidden items-center gap-6 lg:gap-8 md:flex">
             <NavLink href="/">Home</NavLink>
             <NavLink href="#featured-barbers">Barbers</NavLink>
-            <NavLink href="/portal/barber/apply">Become a barber</NavLink>
-            <NavLink href="/portal/salon/apply">Register salon</NavLink>
+            <NavLink href="/portal/barber/apply">Become Barber</NavLink>
+            <NavLink href="/portal/salon/apply">For Salons</NavLink>
 
             {user?.role === "customer" ? (
               <NavLink href="/bookings">Bookings</NavLink>
             ) : null}
           </nav>
-
-          <div className="hidden xl:flex items-center gap-2 rounded-full border border-black/5 bg-neutral-100 px-4 py-2 text-xs font-black text-neutral-500">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            Live booking active
-          </div>
 
           <div className="hidden items-center gap-2 md:flex">
             <ThemeSwitcher />
@@ -150,28 +159,14 @@ setUser(restoredUser);
                   href="/login"
                   className="rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-black shadow-sm transition hover:-translate-y-0.5 hover:bg-neutral-50"
                 >
-                  Customer login
+                  Login
                 </Link>
 
                 <Link
                   href="/signup"
-                  className="rounded-full bg-[#ff355d] px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:-translate-y-0.5 hover:bg-[#ff1f4c]"
+                  className="rounded-full bg-[#ff355d] px-6 py-2.5 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:-translate-y-0.5 hover:bg-[#ff1f4c]"
                 >
-                  Customer signup
-                </Link>
-
-                <Link
-                  href="/portal/barber/login"
-                  className="rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-black shadow-sm transition hover:-translate-y-0.5 hover:bg-neutral-50"
-                >
-                  Barber login
-                </Link>
-
-                <Link
-                  href="/portal/salon/login"
-                  className="rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-black shadow-sm transition hover:-translate-y-0.5 hover:bg-neutral-50"
-                >
-                  Salon login
+                  Get Started
                 </Link>
               </>
             )}
