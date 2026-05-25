@@ -58,6 +58,7 @@ export async function POST(req: Request) {
 
     const message = String(body?.message || "");
     const pathname = String(body?.pathname || "/");
+    const image = body?.image || null;
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json({
@@ -115,14 +116,32 @@ Then continue with a helpful sentence.
               `.trim(),
             },
             {
-              role: "user",
-              content: `
-Current page: ${pathname}
+  role: "user",
+            content: image
+              ? [
+                  {
+                    type: "text",
+                    text: `
+          Current page: ${pathname}
 
-User message:
-${message}
-              `,
-            },
+          User message:
+          ${message}
+                    `,
+                  },
+                  {
+                    type: "image_url",
+                    image_url: {
+                      url: image,
+                    },
+                  },
+                ]
+              : `
+          Current page: ${pathname}
+
+          User message:
+          ${message}
+                `,
+          },
           ],
         }),
       }

@@ -87,6 +87,20 @@ function preferredDate(query: string) {
   return dayKey(new Date());
 }
 
+async function fileToBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.readAsDataURL(file);
+
+    reader.onload = () => {
+      resolve(reader.result as string);
+    };
+
+    reader.onerror = reject;
+  });
+}
+
 export default function ChatBot() {
   const pathname = usePathname();
   const router = useRouter();
@@ -342,9 +356,12 @@ async function appendBotReply(trimmed: string) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        message: trimmed,
-        pathname,
-      }),
+      message: trimmed,
+      pathname,
+      image: selectedImage
+        ? await fileToBase64(selectedImage)
+        : null,
+    }),
     });
 
     if (!res.ok) {
@@ -437,6 +454,7 @@ async function appendBotReply(trimmed: string) {
 
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
+    setSelectedImage(null);
     appendBotReply(trimmed);
   }
 
@@ -531,14 +549,18 @@ async function appendBotReply(trimmed: string) {
                       <Sparkles size={14} />
                     </div>
 
+                    <div className="whitespace-pre-wrap rounded-[22px] rounded-bl-md border border-black/10 bg-white px-4 py-3 text-sm leading-6 text-neutral-900 shadow-sm">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {m.text}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="max-w-[82%] whitespace-pre-wrap rounded-[22px] rounded-br-md bg-neutral-950 px-4 py-3 text-sm leading-6 text-white shadow-lg">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {m.text}
                     </ReactMarkdown>
                   </div>
-                ) : (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {m.text}
-                  </ReactMarkdown>
                 )}
               </div>
             ))}
