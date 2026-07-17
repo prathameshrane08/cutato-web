@@ -1,226 +1,302 @@
-import { NextResponse } from "next/server";
+import { buildCutatoSystemPrompt } from "@/app/lib/ai/prompts";
 
 export const runtime = "edge";
 
+type HistoryMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+function textResponse(text: string, status = 200) {
+  return new Response(text, {
+    status,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-cache",
+    },
+  });
+}
+
 function fallbackReply(message: string) {
-  const m = message.toLowerCase();
+  const normalizedMessage = message.toLowerCase().trim();
 
   if (
-    m.includes("cheapest") ||
-    m.includes("cheap barber") ||
-    m.includes("lowest price")
+    normalizedMessage.includes("barber portal") ||
+    normalizedMessage.includes("barber dashboard") ||
+    normalizedMessage.includes("barber login")
   ) {
-    return "I can help compare barbers based on pricing and services.";
+    return "OPEN_BARBER_PORTAL\nOpening the barber portal.";
   }
 
   if (
-    m.includes("barber portal") ||
-    m.includes("barber dashboard") ||
-    m.includes("barber login")
+    normalizedMessage.includes("salon portal") ||
+    normalizedMessage.includes("salon dashboard") ||
+    normalizedMessage.includes("salon login")
   ) {
-    return "OPEN_BARBER_PORTAL\nOpening barber portal.";
+    return "OPEN_SALON_PORTAL\nOpening the salon portal.";
   }
 
   if (
-    m.includes("salon portal") ||
-    m.includes("salon dashboard") ||
-    m.includes("salon login")
+    normalizedMessage.includes("my bookings") ||
+    normalizedMessage.includes("my booking") ||
+    normalizedMessage.includes("show bookings") ||
+    normalizedMessage.includes("open bookings")
   ) {
-    return "OPEN_SALON_PORTAL\nOpening salon portal.";
-  }
-
-  if (m.includes("bookings") || m.includes("my booking")) {
     return "OPEN_BOOKINGS\nOpening your bookings.";
   }
 
-  if (
-    m.includes("book") ||
-    m.includes("appointment") ||
-    m.includes("haircut")
-  ) {
+  const hasBookingAction =
+    normalizedMessage.includes("book a") ||
+    normalizedMessage.includes("book an") ||
+    normalizedMessage.includes("make an appointment") ||
+    normalizedMessage.includes("schedule an appointment") ||
+    normalizedMessage.includes("reserve a");
+
+  if (hasBookingAction) {
     return [
       "BOOKING_INTENT",
       "date=any",
       "time=any",
-      "service=haircut",
+      "service=any",
       "barber=any",
       "",
-      "I can help you start this booking.",
+      "I can help you start the booking. What service, date, and time would you prefer?",
     ].join("\n");
   }
 
-  return "I can help with bookings, haircare, grooming, barber discovery, and general questions.";
+  if (
+    normalizedMessage.includes("cheapest") ||
+    normalizedMessage.includes("cheap barber") ||
+    normalizedMessage.includes("lowest price")
+  ) {
+    return "I can compare prices once the active barber and service information is loaded from Cutato.";
+  }
+
+  return [
+    "The AI service is temporarily unavailable.",
+    "",
+    "I can still help you open bookings, start a booking, or navigate to the barber and salon portals.",
+  ].join("\n");
+}
+
+function sanitizeHistory(history: unknown): HistoryMessage[] {
+  if (!Array.isArray(history)) {
+    return [];
+  }
+
+  return history
+    .filter((item): item is HistoryMessage => {
+      if (!item || typeof item !== "object") {
+        return false;
+      }
+
+      const message = item as Partial<HistoryMessage>;
+
+      return (
+        (message.role === "user" ||
+          message.role === "assistant") &&
+        typeof message.content === "string" &&
+        message.content.trim().length > 0
+      );
+    })
+    .slice(-10);
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const message = String(body?.message || "");
-    const pathname = String(body?.pathname || "/");
-    const image = body?.image || null;
+    const message = String(body?.message ?? "").trim();
+    const pathname = String(body?.pathname ?? "/");
+    const image =
+      typeof body?.image === "string" && body.image.length > 0
+        ? body.image
+        : null;
 
-    if (!process.env.OPENAI_API_KEY) {
-  return new Response(
-    fallbackReply(message),
-    {
-      headers: {
-        "Content-Type":
-          "text/plain; charset=utf-8",
-      },
+    const history = sanitizeHistory(body?.history);
+
+    if (!message && !image) {
+      return textResponse(
+        "Please enter a message or upload an image.",
+        400
+      );
     }
-  );
-}
 
-    const response = await fetch(
+    const apiKey = process.env.OPENAI_API_KEY;
+
+      console.log(
+        "API Key loaded:",
+        apiKey ? "YES" : "NO"
+      );
+
+    if (!apiKey) {
+      console.error("OPENAI_API_KEY is missing.");
+
+      return textResponse(fallbackReply(message));
+    }
+
+    const userContent = image
+      ? [
+          {
+            type: "text",
+            text: [
+              `Current application page: ${pathname}`,
+              "",
+              "User message:",
+              message ||
+                "Please analyze this image and provide useful hairstyle or grooming guidance.",
+            ].join("\n"),
+          },
+          {
+            type: "image_url",
+            image_url: {
+              url: image,
+            },
+          },
+        ]
+      : [
+          `Current application page: ${pathname}`,
+          "",
+          "User message:",
+          message,
+        ].join("\n");
+
+    const messages = [
+      {
+        role: "system",
+        content: buildCutatoSystemPrompt(pathname),
+      },
+      ...history,
+      {
+        role: "user",
+        content: userContent,
+      },
+    ];
+
+    const openAIResponse = await fetch(
       "https://api.openai.com/v1/chat/completions",
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
           model: "gpt-4o-mini",
           stream: true,
-          messages: [
-            {
-              role: "system",
-              content: `
-You are Cutato Assistant, an AI assistant inside a modern barber booking platform.
-
-You can:
-- answer like ChatGPT
-- answer general questions
-- help with grooming and haircare
-- explain hairstyles and beard styles
-- help users discover barbers
-- explain services and pricing
-- guide users through bookings
-- answer casually and naturally
-
-Rules:
-- Keep answers useful and conversational.
-- Keep answers concise unless user asks for detail.
-- Do not invent private booking data.
-- For general knowledge questions, behave like ChatGPT.
-
-Navigation commands:
-OPEN_BOOKINGS
-OPEN_HOME
-OPEN_BARBER_PORTAL
-OPEN_SALON_PORTAL
-
-Booking format:
-BOOKING_INTENT
-date=...
-time=...
-service=...
-barber=...
-
-Then continue with a helpful sentence.
-              `.trim(),
-            },
-            {
-  role: "user",
-            content: image
-              ? [
-                  {
-                    type: "text",
-                    text: `
-          Current page: ${pathname}
-
-          User message:
-          ${message}
-                    `,
-                  },
-                  {
-                    type: "image_url",
-                    image_url: {
-                      url: image,
-                    },
-                  },
-                ]
-              : `
-          Current page: ${pathname}
-
-          User message:
-          ${message}
-                `,
-          },
-          ],
+          messages,
         }),
       }
     );
 
-    if (!response.ok || !response.body) {
-      console.error("OpenAI streaming failed");
+    if (!openAIResponse.ok) {
+      const errorText = await openAIResponse.text();
 
-      return new Response(
-      fallbackReply(message),
-      {
-        headers: {
-          "Content-Type":
-            "text/plain; charset=utf-8",
-        },
-      }
-    );
+      console.error(
+        "OpenAI request failed:",
+        openAIResponse.status,
+        errorText
+      );
+
+      return textResponse(fallbackReply(message));
+    }
+
+    if (!openAIResponse.body) {
+      console.error("OpenAI response body is empty.");
+
+      return textResponse(fallbackReply(message));
     }
 
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
 
-    const stream = new ReadableStream({
+    const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
-        const reader = response.body!.getReader();
+        const reader = openAIResponse.body!.getReader();
 
         let buffer = "";
+        let streamClosed = false;
 
-        while (true) {
-          const { done, value } = await reader.read();
-
-          if (done) {
+        const closeStream = () => {
+          if (!streamClosed) {
+            streamClosed = true;
             controller.close();
-            break;
           }
+        };
 
-          buffer += decoder.decode(value, {
-            stream: true,
-          });
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
 
-          const lines = buffer.split("\n");
-
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-
-            if (!trimmed.startsWith("data:")) {
-              continue;
+            if (done) {
+              closeStream();
+              break;
             }
 
-            const json = trimmed.replace(/^data:\s*/, "");
+            buffer += decoder.decode(value, {
+              stream: true,
+            });
 
-            if (json === "[DONE]") {
-              controller.close();
-              return;
-            }
+            const lines = buffer.split("\n");
 
-            try {
-              const parsed = JSON.parse(json);
+            buffer = lines.pop() ?? "";
 
-              const token =
-                parsed?.choices?.[0]?.delta?.content || "";
+            for (const line of lines) {
+              const trimmedLine = line.trim();
 
-              if (token) {
-                controller.enqueue(
-                  encoder.encode(token)
+              if (!trimmedLine.startsWith("data:")) {
+                continue;
+              }
+
+              const data = trimmedLine.replace(
+                /^data:\s*/,
+                ""
+              );
+
+              if (data === "[DONE]") {
+                closeStream();
+                return;
+              }
+
+              try {
+                const parsed = JSON.parse(data);
+
+                const token =
+                  parsed?.choices?.[0]?.delta?.content;
+
+                if (
+                  typeof token === "string" &&
+                  token.length > 0
+                ) {
+                  controller.enqueue(
+                    encoder.encode(token)
+                  );
+                }
+              } catch (parseError) {
+                console.error(
+                  "Could not parse streaming data:",
+                  parseError
                 );
               }
-            } catch (err) {
-              console.error("Stream parse error:", err);
             }
           }
+        } catch (streamError) {
+          console.error(
+            "Error while reading OpenAI stream:",
+            streamError
+          );
+
+          if (!streamClosed) {
+            controller.enqueue(
+              encoder.encode(
+                "\n\nThe response was interrupted. Please try again."
+              )
+            );
+          }
+
+          closeStream();
+        } finally {
+          reader.releaseLock();
         }
       },
     });
@@ -228,14 +304,16 @@ Then continue with a helpful sentence.
     return new Response(stream, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-cache",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
       },
     });
   } catch (error) {
     console.error("CHAT ROUTE ERROR:", error);
 
-    return NextResponse.json({
-      text: "Something went wrong. Please try again.",
-    });
+    return textResponse(
+      "Something went wrong while processing your message. Please try again.",
+      500
+    );
   }
 }
