@@ -1,4 +1,9 @@
 import { buildCutatoSystemPrompt } from "@/app/lib/ai/prompts";
+import {
+  getCutatoAIContext,
+  type AIBarber,
+  type AIService,
+} from "@/app/lib/ai/cutatoData";
 
 export const runtime = "edge";
 
@@ -6,6 +11,76 @@ type HistoryMessage = {
   role: "user" | "assistant";
   content: string;
 };
+
+function buildDatabaseContext(
+  barbers: AIBarber[],
+  services: AIService[]
+) {
+  if (!barbers.length) {
+    return [
+      "CUTATO DATABASE INFORMATION",
+      "",
+      "No active barbers are currently available.",
+    ].join("\n");
+  }
+
+  const barberSections = barbers.map(
+    (barber) => {
+      const barberServices =
+        services.filter(
+          (service) =>
+            service.barber_id === barber.id
+        );
+
+      const serviceText =
+        barberServices.length > 0
+          ? barberServices
+              .map((service) => {
+                return [
+                  `- ${service.name}`,
+                  `category: ${service.category}`,
+                  `price: €${service.base_price_euro}`,
+                  `duration: ${service.duration_min} minutes`,
+                  service.description
+                    ? `description: ${service.description}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(", ");
+              })
+              .join("\n")
+          : "- No active services listed";
+
+      return [
+        `BARBER: ${barber.name}`,
+        `ID: ${barber.id}`,
+        `Area: ${barber.area}`,
+        `Address: ${barber.address}`,
+        `Distance: ${barber.dist_km} km`,
+        `Rating: ${barber.rating}`,
+        `Reviews: ${barber.reviews}`,
+        `Speciality: ${
+          barber.speciality ??
+          "Not specified"
+        }`,
+        `Tagline: ${
+          barber.tagline ?? "Not specified"
+        }`,
+        "Services:",
+        serviceText,
+      ].join("\n");
+    }
+  );
+
+  return [
+    "CUTATO DATABASE INFORMATION",
+    "",
+    "Use only this information when answering questions about Cutato barbers, services, ratings, durations, locations, or prices.",
+    "Never invent missing database information.",
+    "",
+    ...barberSections,
+  ].join("\n\n");
+}
 
 function textResponse(text: string, status = 200) {
   return new Response(text, {
@@ -114,6 +189,28 @@ export async function POST(req: Request) {
         : null;
 
     const history = sanitizeHistory(body?.history);
+    let databaseContext =
+  "Cutato database information could not be loaded.";
+
+try {
+  const { barbers, services } =
+    await getCutatoAIContext();
+
+  databaseContext =
+    buildDatabaseContext(
+      barbers,
+      services
+    );
+
+  console.log(
+    `AI context loaded: ${barbers.length} barbers and ${services.length} services`
+  );
+} catch (databaseError) {
+  console.error(
+    "AI DATABASE CONTEXT ERROR:",
+    databaseError
+  );
+}
 
     if (!message && !image) {
       return textResponse(
@@ -162,16 +259,21 @@ export async function POST(req: Request) {
         ].join("\n");
 
     const messages = [
-      {
-        role: "system",
-        content: buildCutatoSystemPrompt(pathname),
-      },
-      ...history,
-      {
-        role: "user",
-        content: userContent,
-      },
-    ];
+    {
+      role: "system",
+      content:
+        buildCutatoSystemPrompt(pathname),
+    },
+    {
+      role: "system",
+      content: databaseContext,
+    },
+    ...history,
+    {
+      role: "user",
+      content: userContent,
+    },
+  ];
 
     const openAIResponse = await fetch(
       "https://api.openai.com/v1/chat/completions",
