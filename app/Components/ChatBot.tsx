@@ -618,35 +618,6 @@ export default function ChatBot() {
     setIsTyping(true);
 
     try {
-      if (!imageFile) {
-        const local = await
-          replyToChatTry(trimmed);
-
-        if (
-          local?.text &&
-          !local.text
-            .toLowerCase()
-            .includes(
-              "not fully sure what you mean yet"
-            )
-        ) {
-          const botMessage: ChatUIMessage = {
-            id: uid("bot"),
-            role: "bot",
-            text: local.text,
-            createdAt:
-              new Date().toISOString(),
-          };
-
-          setMessages((previous) => [
-            ...previous,
-            botMessage,
-          ]);
-
-          return;
-        }
-      }
-
       const image = imageFile
         ? await fileToBase64(imageFile)
         : null;
@@ -815,7 +786,11 @@ export default function ChatBot() {
         error
       );
 
+      const local =
+        await replyToChatTry(trimmed);
+
       const fallback =
+        local?.text ??
         replyToChat(trimmed);
 
       const botMessage: ChatUIMessage = {
