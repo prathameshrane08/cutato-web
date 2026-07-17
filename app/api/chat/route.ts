@@ -61,10 +61,16 @@ export async function POST(req: Request) {
     const image = body?.image || null;
 
     if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({
-        text: fallbackReply(message),
-      });
+  return new Response(
+    fallbackReply(message),
+    {
+      headers: {
+        "Content-Type":
+          "text/plain; charset=utf-8",
+      },
     }
+  );
+}
 
     const response = await fetch(
       "https://api.openai.com/v1/chat/completions",
@@ -150,9 +156,15 @@ Then continue with a helpful sentence.
     if (!response.ok || !response.body) {
       console.error("OpenAI streaming failed");
 
-      return NextResponse.json({
-        text: fallbackReply(message),
-      });
+      return new Response(
+      fallbackReply(message),
+      {
+        headers: {
+          "Content-Type":
+            "text/plain; charset=utf-8",
+        },
+      }
+    );
     }
 
     const encoder = new TextEncoder();

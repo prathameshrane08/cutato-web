@@ -1,7 +1,11 @@
 "use client";
 
-import { readCustomerBarbers, type CustomerBarber } from "@/app/lib/barbersStore";
-import { readAllServices, type Service } from "@/app/lib/servicesStore";
+import type { CustomerBarber } from "@/app/lib/barbersStore";
+
+import { getServicesFromSupabase,type Service,} from "@/app/lib/servicesStore";
+
+import {getBarbersFromSupabase,} from "@/app/lib/barbersSupabase";
+
 import { readSalonSettings } from "@/app/lib/salonSettingsStore";
 import { generateSlotsForDate } from "@/app/lib/availabilityStore";
 
@@ -173,13 +177,60 @@ export function getWelcomeMessage(): ChatMessage {
   };
 }
 
-export function replyToChatTry(input: string): ChatBotResponse {
-  const text = input.toLowerCase().trim();
-  const q = normalize(input);
-  const salon = readSalonSettings();
-  const barbers = readCustomerBarbers().filter((b) => b.active !== false);
-  const services = readAllServices().filter((s) => s.active);
+function mapSupabaseBarberToCustomerBarber(
+  barber: Awaited<ReturnType<typeof getBarbersFromSupabase>>[number]
+): CustomerBarber {
+  return {
+    id: barber.id,
+    name: barber.name,
+    area: barber.area,
+    address: barber.address,
+    distKm: Number(barber.dist_km ?? 0),
+    rating: Number(barber.rating ?? 0),
+    reviews: Number(barber.reviews ?? 0),
+    tagline: barber.tagline ?? "",
+    about: barber.about ?? "",
+    image: barber.image_url ?? "",
+    speciality: barber.speciality ?? "",
+    active: barber.active ?? true,
+  } as CustomerBarber;
+}
 
+export async function replyToChatTry(
+  input: string
+): Promise<ChatBotResponse> {
+  const text = input.toLowerCase().trim();
+const q = normalize(input);
+const salon = readSalonSettings();
+
+let barbers: CustomerBarber[] = [];
+let services: Service[] = [];
+
+try {
+  const [supabaseBarbers, supabaseServices] =
+    await Promise.all([
+      getBarbersFromSupabase(),
+      getServicesFromSupabase(),
+    ]);
+
+  barbers = supabaseBarbers
+    .filter((barber) => barber.active !== false)
+    .map(mapSupabaseBarberToCustomerBarber);
+
+  services = supabaseServices.filter(
+    (service) => service.active !== false
+  );
+} catch (error) {
+  console.error(
+    "Could not load chatbot data from Supabase:",
+    error
+  );
+
+  return {
+    text:
+      "I couldn’t load the current barbers and services. Please try again shortly.",
+  };
+}
   if (!q) {
     return {
       text: "Ask me something like “show barbers”, “which barber is cheapest”, or “what services does Abhi offer?”.",
@@ -238,12 +289,33 @@ export function replyToChatTry(input: string): ChatBotResponse {
       };
     }
 
-    const grouped = new Map<string, Service[]>();
-    for (const s of services) {
-      const key = s.category || "Other";
-      if (!grouped.has(key)) grouped.set(key, []);
-      grouped.get(key)!.push(s);
-    }
+    const uniqueServices = Array.from(
+  new Map(
+    services.map((service) => {
+      const uniqueKey = [
+        service.name.toLowerCase(),
+        service.category.toLowerCase(),
+        service.durationMin,
+        service.basePriceEuro,
+      ].join("_");
+
+      return [uniqueKey, service];
+    })
+  ).values()
+);
+
+const grouped = new Map<string, Service[]>();
+
+for (const service of uniqueServices) {
+  const category =
+    service.category || "Other";
+
+  if (!grouped.has(category)) {
+    grouped.set(category, []);
+  }
+
+  grouped.get(category)!.push(service);
+}
 
     const text = Array.from(grouped.entries())
       .map(([cat, list]) => {

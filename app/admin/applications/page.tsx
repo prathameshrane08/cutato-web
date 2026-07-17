@@ -34,22 +34,37 @@ export default function AdminApplicationsPage() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
 
-  async function loadApplications() {
+ async function loadApplications() {
+  try {
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from("applications")
-      .select("*")
-      .order("created_at", {
-        ascending: false,
-      });
+    const response = await fetch("/api/admin/applications", {
+      method: "GET",
+      cache: "no-store",
+    });
 
-    if (!error && data) {
-      setApplications(data);
+    const text = await response.text();
+
+    console.log("API RESPONSE:", text);
+
+    const result = JSON.parse(text);
+
+    if (!response.ok) {
+      console.error("LOAD APPLICATIONS ERROR:", result);
+      alert(result.error || "Could not load applications.");
+      setApplications([]);
+      return;
     }
 
+    setApplications(result.applications ?? []);
+  } catch (error) {
+    console.error("LOAD APPLICATIONS ERROR:", error);
+    alert("Unexpected error while loading applications.");
+    setApplications([]);
+  } finally {
     setLoading(false);
   }
+}
 
   async function approveApplication(id: string) {
     try {
