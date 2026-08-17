@@ -136,13 +136,39 @@ function isFadeQuestion(text: string) {
   ]);
 }
 
+function isHairstyleAdvisorRequest(
+  text: string
+) {
+  return includesAny(text, [
+    "suggest me a hairstyle",
+    "suggest a hairstyle",
+    "recommend a hairstyle",
+    "recommend me a hairstyle",
+    "recommend a haircut",
+    "which haircut suits me",
+    "which hairstyle suits me",
+    "what haircut suits me",
+    "what hairstyle suits me",
+    "what hairstyle should i get",
+    "what haircut should i get",
+    "help me choose a hairstyle",
+    "help me choose a haircut",
+    "find my hairstyle",
+    "hairstyle advisor",
+    "hairstyle consultation",
+    "hair consultation",
+  ]);
+}
+
 function isImageQuestion(text: string) {
   return includesAny(text, [
     "image",
     "photo",
     "picture",
-    "hairstyle recommendation",
-    "which haircut suits",
+    "analyze my photo",
+    "analyse my photo",
+    "analyze my face",
+    "analyse my face",
   ]);
 }
 
@@ -178,13 +204,17 @@ export function getWelcomeMessage(): ChatMessage {
     id: createId("bot"),
     role: "bot",
     text:
-      "Hi! I’m the Cutato Assistant. I can help you find a barber, understand services, check booking options, and manage appointments.",
+      "Hi! I’m the Cutato Assistant. I can help you find a barber, choose a hairstyle, understand services, check booking options, and manage appointments.",
     createdAt: new Date().toISOString(),
   };
 }
 
 export function getDefaultQuickActions(): QuickAction[] {
   return [
+    {
+      label: "Find my hairstyle",
+      prompt: "suggest me a hairstyle",
+    },
     {
       label: "Show barbers",
       prompt: "show barbers",
@@ -218,7 +248,23 @@ export async function replyToChatTry(
   if (isGreeting(text)) {
     return {
       text:
-        "Hello! I can help you find a barber, choose a service, or start a booking.",
+        "Hello! I can help you find a barber, choose a hairstyle, select a service, or start a booking.",
+    };
+  }
+
+  if (isHairstyleAdvisorRequest(text)) {
+    return {
+      text:
+        [
+          "✨ I can help you find a hairstyle that suits you.",
+          "",
+          "The Cutato Hairstyle Advisor can recommend styles based on your face shape, hair texture, thickness, current length, styling preferences, and facial hair.",
+          "",
+          "You can also upload a photo inside the advisor for AI-assisted analysis.",
+          "",
+          "Opening the Hairstyle Advisor now.",
+          "OPEN_HAIRSTYLE_ADVISOR",
+        ].join("\n"),
     };
   }
 
@@ -288,7 +334,14 @@ export async function replyToChatTry(
   if (isImageQuestion(text)) {
     return {
       text:
-        "Upload a clear front or side photo and describe the style you want. The AI image analysis requires an available API connection.",
+        [
+          "You can upload an image here for general image questions.",
+          "",
+          "For a full hairstyle recommendation based on your face and hair, use the Cutato Hairstyle Advisor.",
+          "",
+          "Opening it now.",
+          "OPEN_HAIRSTYLE_ADVISOR",
+        ].join("\n"),
     };
   }
 
@@ -309,7 +362,10 @@ export async function replyToChatTry(
   return null;
 }
 
-export function replyToChat(input: string): string {
+
+export function replyToChat(
+  input: string
+): string {
   const text = normalize(input);
 
   if (!text) {
@@ -320,11 +376,12 @@ export function replyToChat(input: string): string {
     "I couldn’t reach the online AI service right now.",
     "",
     "You can still use Cutato to:",
+    "- find a hairstyle",
     "- browse barbers",
     "- view services and prices",
     "- start a booking",
     "- open your existing bookings",
     "",
-    "Try asking **“show barbers”**, **“book an appointment”**, or **“show my bookings.”**",
+    "Try asking **“suggest me a hairstyle”**, **“show barbers”**, **“book an appointment”**, or **“show my bookings.”**",
   ].join("\n");
 }

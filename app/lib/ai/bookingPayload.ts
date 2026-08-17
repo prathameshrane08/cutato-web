@@ -27,6 +27,26 @@ export function createBookingPayload(
     return null;
   }
 
+  const durationMin = Number(
+    plan.service.duration_min
+  );
+
+  const basePriceEuro = Number(
+    plan.service.base_price_euro
+  );
+
+  if (
+    !Number.isFinite(durationMin) ||
+    durationMin <= 0
+  ) {
+    console.error(
+      "Invalid service duration:",
+      plan.service.duration_min
+    );
+
+    return null;
+  }
+
   return {
     barberId: plan.barber.id,
     barberName: plan.barber.name,
@@ -34,8 +54,8 @@ export function createBookingPayload(
     serviceId: plan.service.id,
     serviceName: plan.service.name,
 
-    durationMin: plan.service.duration_min,
-    basePriceEuro: plan.service.base_price_euro,
+    durationMin,
+    basePriceEuro,
 
     date: plan.date,
     time: plan.time,

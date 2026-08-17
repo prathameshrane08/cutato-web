@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
 import WebShell from "@/app/Components/WebShell";
 import { getAuthUser } from "@/app/Components/auth";
 import type { CustomerBarber } from "@/app/lib/barbersStore";
@@ -10,20 +11,29 @@ import {
   getBookingsForBarber,
   updateBookingStatusInSupabase,
 } from "@/app/lib/bookingsSupabase";
-import type { Booking, BookingStatus } from "@/app/lib/bookingStore";
-import { requireBarberAuth } from "@/app/portal/_lib/portalAuth";
+import type {
+  Booking,
+  BookingStatus,
+} from "@/app/lib/bookingStore";
 import { subscribeToBookings } from "@/app/lib/realtime";
 
-function fmtEUR(v: number) {
+function fmtEUR(value: number) {
   return new Intl.NumberFormat("de-DE", {
     style: "currency",
     currency: "EUR",
-  }).format(v);
+  }).format(value);
 }
 
 function formatDate(dateStr: string) {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+  const [year, month, day] = dateStr
+    .split("-")
+    .map(Number);
+
+  return new Date(
+    year,
+    month - 1,
+    day
+  ).toLocaleDateString(undefined, {
     weekday: "short",
     day: "2-digit",
     month: "short",
@@ -31,192 +41,345 @@ function formatDate(dateStr: string) {
   });
 }
 
-function statusLabel(s?: BookingStatus) {
-  if (s === "completed") return "Completed";
-  if (s === "cancelled") return "Cancelled";
-  if (s === "no_show") return "No-show";
-  if (s === "confirmed") return "Confirmed";
+function todayKey() {
+  const date = new Date();
+
+  return `${date.getFullYear()}-${String(
+    date.getMonth() + 1
+  ).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function statusLabel(
+  status?: BookingStatus
+) {
+  if (status === "completed") return "Completed";
+  if (status === "cancelled") return "Cancelled";
+  if (status === "no_show") return "No-show";
+  if (status === "confirmed") return "Confirmed";
   return "Pending";
 }
 
-function pill(subtle = false): React.CSSProperties {
-  return {
-    display: "inline-flex",
-    padding: "6px 10px",
-    borderRadius: 999,
-    fontSize: 12,
-    fontWeight: 900,
-    border: subtle
-      ? "1px solid rgba(0,0,0,0.10)"
-      : "1px solid rgba(0,0,0,0.14)",
-    background: subtle ? "rgba(0,0,0,0.02)" : "rgba(0,0,0,0.04)",
-  };
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error
+  ) {
+    return String(
+      (error as { message?: unknown }).message ??
+        "Unknown error"
+    );
+  }
+
+  return "Unknown error";
 }
 
-function todayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
-}
+export default function BarberBookingsPage() {
+  const authUser = useMemo(
+    () => getAuthUser(),
+    []
+  );
 
-export default function Page() {
-  const auth = requireBarberAuth();
+  const barberId =
+    authUser?.role === "barber"
+      ? authUser.barberId ?? ""
+      : "";
 
-  const user = getAuthUser();
-  const barberId = user?.barberId ?? "";
+  const [barber, setBarber] =
+    useState<CustomerBarber | null>(null);
 
-  const [barber, setBarber] = useState<CustomerBarber | null>(null);
-  const [all, setAll] = useState<Booking[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"today" | "upcoming" | "past" | "all">("today");
-  const [search, setSearch] = useState("");
+  const [all, setAll] =
+    useState<Booking[]>([]);
 
-  async function loadData() {
-    try {
-      setLoading(true);
+  const [loading, setLoading] =
+    useState(true);
 
+  const [loadError, setLoadError] =
+    useState("");
+
+  const [actionId, setActionId] =
+    useState<string | null>(null);
+
+  const [tab, setTab] =
+    useState<
+      "today" | "upcoming" | "past" | "all"
+    >("today");
+
+  const [search, setSearch] =
+    useState("");
+
+  const loadData = useCallback(
+    async (showLoader = false) => {
       if (!barberId) {
-        setBarber(null);
-        setAll([]);
+        setLoadError(
+          "This barber account is not linked to a barber profile."
+        );
+        setLoading(false);
         return;
       }
 
-      const [barberRow, bookings] = await Promise.all([
-        getBarberByIdFromSupabase(barberId),
-        getBookingsForBarber(barberId),
-      ]);
+      try {
+        if (showLoader) {
+          setLoading(true);
+        }
 
-      if (barberRow) {
+        setLoadError("");
+
+        const barberRow =
+          await getBarberByIdFromSupabase(
+            barberId
+          );
+
+        if (!barberRow) {
+          throw new Error(
+            "The linked barber profile does not exist."
+          );
+        }
+
         setBarber({
           id: barberRow.id,
           name: barberRow.name,
           area: barberRow.area,
           address: barberRow.address,
-          distKm: Number(barberRow.dist_km ?? 0),
-          rating: Number(barberRow.rating ?? 0),
-          reviews: Number(barberRow.reviews ?? 0),
-          tagline: barberRow.tagline ?? undefined,
-          about: barberRow.about ?? undefined,
-          imageUrl: barberRow.image_url ?? undefined,
-          speciality: barberRow.speciality ?? undefined,
-          active: barberRow.active ?? true,
+          distKm: Number(
+            barberRow.dist_km ?? 0
+          ),
+          rating: Number(
+            barberRow.rating ?? 0
+          ),
+          reviews: Number(
+            barberRow.reviews ?? 0
+          ),
+          tagline:
+            barberRow.tagline ??
+            undefined,
+          about:
+            barberRow.about ??
+            undefined,
+          imageUrl:
+            barberRow.image_url ??
+            undefined,
+          speciality:
+            barberRow.speciality ??
+            undefined,
+          active:
+            barberRow.active ?? true,
         });
-      } else {
-        setBarber(null);
-      }
 
-      setAll(bookings);
-    } catch (err) {
-      console.error("Failed to load barber bookings page:", err);
-      setBarber(null);
-      setAll([]);
-    } finally {
-      setLoading(false);
-    }
-  }
+        const bookings =
+          await getBookingsForBarber(
+            barberId
+          );
+
+        setAll(bookings ?? []);
+      } catch (error) {
+        const message =
+          errorMessage(error);
+
+        console.error(
+          "BARBER BOOKINGS LOAD ERROR:",
+          message
+        );
+
+        setBarber(null);
+        setAll([]);
+        setLoadError(message);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [barberId]
+  );
 
   useEffect(() => {
-    if (!auth.ok || !barberId) {
-      setLoading(false);
+    void loadData(true);
+
+    if (!barberId) {
       return;
     }
 
-    loadData();
-
-    const unsubscribe = subscribeToBookings(
-      () => {
-        loadData();
-      },
-      `barber_id=eq.${barberId}`
-    );
+    const unsubscribe =
+      subscribeToBookings(
+        () => {
+          void loadData(false);
+        },
+        `barber_id=eq.${barberId}`
+      );
 
     return unsubscribe;
-  }, [auth.ok, barberId]);
+  }, [barberId, loadData]);
 
-  const filtered = useMemo(() => {
-    const today = todayKey();
-    const q = search.trim().toLowerCase();
+  const filtered =
+    useMemo(() => {
+      const today =
+        todayKey();
 
-    return all
-      .filter((b) => {
-        const status = (b.status ?? "pending") as BookingStatus;
+      const query =
+        search
+          .trim()
+          .toLowerCase();
 
-        if (tab === "today" && b.date !== today) return false;
+      return all
+        .filter(
+          (booking) => {
+            const status =
+              (booking.status ??
+                "pending") as BookingStatus;
 
-        if (tab === "upcoming" && !(status === "pending" || status === "confirmed")) {
-          return false;
-        }
+            if (
+              tab === "today" &&
+              booking.date !== today
+            ) {
+              return false;
+            }
 
-        if (
-          tab === "past" &&
-          !(status === "completed" || status === "cancelled" || status === "no_show")
-        ) {
-          return false;
-        }
+            if (
+              tab === "upcoming" &&
+              !(
+                booking.date >= today &&
+                (status === "pending" ||
+                  status === "confirmed")
+              )
+            ) {
+              return false;
+            }
 
-        if (!q) return true;
+            if (
+              tab === "past" &&
+              !(
+                booking.date < today ||
+                status === "completed" ||
+                status === "cancelled" ||
+                status === "no_show"
+              )
+            ) {
+              return false;
+            }
 
-        return [
-          b.userEmail,
-          b.serviceName,
-          b.date,
-          b.time,
-          b.paymentMethod,
-          status,
-          b.aiStyle ?? "",
-          b.haircutBrief ?? "",
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(q);
-      })
-      .sort(
-        (a, b) =>
-          new Date(`${a.date}T${a.time}:00`).getTime() -
-          new Date(`${b.date}T${b.time}:00`).getTime()
-      );
-  }, [all, tab, search]);
+            if (!query) {
+              return true;
+            }
 
-  async function patchStatus(id: string, status: BookingStatus) {
+            return [
+              booking.userEmail,
+              booking.serviceName,
+              booking.date,
+              booking.time,
+              booking.paymentMethod,
+              status,
+              booking.aiStyle ?? "",
+              booking.haircutBrief ?? "",
+            ]
+              .join(" ")
+              .toLowerCase()
+              .includes(query);
+          }
+        )
+        .sort(
+          (first, second) =>
+            `${first.date}${first.time}`.localeCompare(
+              `${second.date}${second.time}`
+            )
+        );
+    }, [
+      all,
+      tab,
+      search,
+    ]);
+
+  async function patchStatus(
+    bookingId: string,
+    status: BookingStatus
+  ) {
     try {
-      await updateBookingStatusInSupabase(id, status);
-      await loadData();
-    } catch (err) {
-      console.error("Failed to update booking status:", err);
-      alert("Could not update booking status.");
+      setActionId(
+        bookingId
+      );
+
+      await updateBookingStatusInSupabase(
+        bookingId,
+        status
+      );
+
+      await loadData(false);
+    } catch (error) {
+      console.error(
+        "BARBER STATUS UPDATE ERROR:",
+        error
+      );
+
+      alert(
+        errorMessage(error)
+      );
+    } finally {
+      setActionId(null);
     }
   }
 
-  if (!auth.ok) {
-    return <Denied role="barber" reason={auth.reason} />;
-  }
-
-  if (loading) {
+  if (
+    !authUser ||
+    authUser.role !== "barber"
+  ) {
     return (
-      <WebShell title="Barber Bookings" subtitle="Loading your appointments...">
-        <div className="mx-auto max-w-4xl">
-          <div className="theme-card" style={{ padding: 18 }}>
-            <div style={{ fontWeight: 900 }}>Loading bookings...</div>
-          </div>
+      <WebShell
+        title="Access denied"
+        subtitle="Barber account required."
+      >
+        <div className="mx-auto max-w-4xl rounded-[28px] border border-black/10 bg-white p-8 shadow-sm">
+          <h2 className="text-2xl font-black">
+            Barber login required
+          </h2>
+
+          <Link
+            href="/login"
+            className="mt-5 inline-flex rounded-full bg-[#ff355d] px-6 py-3 text-sm font-black text-white"
+          >
+            Login
+          </Link>
         </div>
       </WebShell>
     );
   }
 
-  if (!barberId || !barber) {
+  if (loading) {
     return (
       <WebShell
         title="Barber Bookings"
-        subtitle="Your barber account is not linked to a staff profile yet."
+        subtitle="Loading your appointments..."
       >
-        <div className="mx-auto max-w-4xl">
-          <div className="theme-card" style={{ padding: 18 }}>
-            <div style={{ fontWeight: 900, fontSize: 18 }}>Barber profile not linked</div>
-            <div className="theme-muted" style={{ marginTop: 8 }}>
-              Make sure Supabase has a barber row with ID <b>{barberId || "missing"}</b>.
-            </div>
-          </div>
+        <div className="mx-auto max-w-6xl rounded-[28px] border border-black/10 bg-white p-8 shadow-sm">
+          Loading bookings...
+        </div>
+      </WebShell>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <WebShell
+        title="Barber Bookings"
+        subtitle="Could not load your bookings."
+      >
+        <div className="mx-auto max-w-4xl rounded-[28px] border border-red-200 bg-white p-8 shadow-sm">
+          <h2 className="text-2xl font-black">
+            Bookings could not be loaded
+          </h2>
+
+          <p className="mt-3 text-sm text-neutral-500">
+            {loadError}
+          </p>
+
+          <button
+            type="button"
+            onClick={() =>
+              void loadData(true)
+            }
+            className="mt-5 rounded-full bg-neutral-950 px-6 py-3 text-sm font-black text-white"
+          >
+            Try again
+          </button>
         </div>
       </WebShell>
     );
@@ -225,180 +388,320 @@ export default function Page() {
   return (
     <WebShell
       title="Barber Bookings"
-      subtitle={`See only the appointments assigned to ${barber.name}.`}
+      subtitle={`Appointments assigned to ${
+        barber?.name ?? "you"
+      }.`}
     >
-      <div className="mx-auto max-w-6xl" style={{ display: "grid", gap: 14 }}>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Link href="/portal/barber" className="btn btn-secondary">
-            ← Barber dashboard
-          </Link>
-          <Link href="/portal/barber/schedule" className="btn btn-secondary">
-            Schedule
-          </Link>
-          <Link href="/portal/barber/earnings" className="btn btn-secondary">
-            Earnings
-          </Link>
-        </div>
+      <div className="mx-auto max-w-6xl">
+        <PortalNav />
 
-        <div className="theme-card" style={{ padding: 16, borderRadius: 20 }}>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end" }}>
-            <div style={{ minWidth: 260 }}>
-              <div style={{ fontWeight: 900, marginBottom: 8 }}>Logged-in barber</div>
-              <div style={{ ...inputStyle, display: "flex", alignItems: "center" }}>
-                {barber.name}
-              </div>
+        <section className="mt-6 rounded-[30px] border border-black/10 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff355d]">
+                Logged-in barber
+              </p>
+
+              <h2 className="mt-2 text-2xl font-black">
+                {barber?.name}
+              </h2>
+
+              <p className="mt-1 text-xs text-neutral-400">
+                {all.length} total booking
+                {all.length === 1
+                  ? ""
+                  : "s"}
+              </p>
             </div>
 
-            <div style={{ flex: "1 1 320px", minWidth: 240 }}>
-              <div style={{ fontWeight: 900, marginBottom: 8 }}>Search</div>
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search customer, service, date, AI brief..."
-                style={inputStyle}
-              />
-            </div>
-
-            <div style={{ marginLeft: "auto", display: "flex", gap: 10, flexWrap: "wrap" }}>
-              {(["today", "upcoming", "past", "all"] as const).map((x) => (
-                <button
-                  key={x}
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 999,
-                    border:
-                      tab === x
-                        ? "1px solid rgba(0,0,0,0.18)"
-                        : "1px solid rgba(0,0,0,0.08)",
-                    background: tab === x ? "rgba(0,0,0,0.05)" : "rgba(0,0,0,0.02)",
-                    fontWeight: 900,
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
-                  onClick={() => setTab(x)}
-                >
-                  {x[0].toUpperCase() + x.slice(1)}
-                </button>
-              ))}
-            </div>
+            <input
+              value={search}
+              onChange={(event) =>
+                setSearch(
+                  event.target.value
+                )
+              }
+              placeholder="Search customer, service, date, AI brief..."
+              className="h-11 min-w-[280px] rounded-2xl border border-black/10 bg-neutral-50 px-4 text-sm font-semibold outline-none focus:border-[#ff355d]"
+            />
           </div>
 
-          <div className="theme-muted" style={{ marginTop: 10, fontSize: 12 }}>
-            Barber ID: <b>{barberId}</b> • Total bookings: <b>{all.length}</b>
+          <div className="mt-5 flex flex-wrap gap-2">
+            {(
+              [
+                "today",
+                "upcoming",
+                "past",
+                "all",
+              ] as const
+            ).map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() =>
+                  setTab(item)
+                }
+                className={`rounded-full px-4 py-2 text-xs font-black ${
+                  tab === item
+                    ? "bg-neutral-950 text-white"
+                    : "border border-black/10 bg-neutral-50"
+                }`}
+              >
+                {item[0].toUpperCase() +
+                  item.slice(1)}
+              </button>
+            ))}
           </div>
-        </div>
+        </section>
 
-        {filtered.length === 0 ? (
-          <div className="theme-card" style={{ padding: 18 }}>
-            <div style={{ fontWeight: 900, fontSize: 18 }}>No bookings found</div>
-            <div className="theme-muted" style={{ marginTop: 8 }}>
-              No appointments match your current filters.
-            </div>
+        {filtered.length ===
+        0 ? (
+          <div className="mt-5 rounded-[28px] border border-black/10 bg-white p-8 text-center shadow-sm">
+            <h3 className="font-black">
+              No bookings found
+            </h3>
+
+            <p className="mt-2 text-sm text-neutral-500">
+              No appointments match
+              the current filter.
+            </p>
           </div>
         ) : (
-          <div style={{ display: "grid", gap: 12 }}>
-            {filtered.map((b) => (
-              <div
-                key={b.id}
-                className="theme-card"
-                style={{ padding: 18, borderRadius: 20, display: "grid", gap: 12 }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 950, fontSize: 18 }}>{b.serviceName}</div>
-                    <div className="theme-muted" style={{ marginTop: 6, fontSize: 13 }}>
-                      {formatDate(b.date)} • {b.time} • {b.durationMin} min
-                    </div>
-                    <div className="theme-muted" style={{ marginTop: 4, fontSize: 13 }}>
-                      Customer: {b.userEmail}
-                    </div>
-                  </div>
+          <div className="mt-5 grid gap-4">
+            {filtered.map(
+              (booking) => {
+                const busy =
+                  actionId ===
+                  booking.id;
 
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                    <span style={pill()}>{statusLabel(b.status)}</span>
-                    <span style={pill(true)}>
-                      {b.paymentMethod === "online" ? "Online" : "At salon"}
-                    </span>
-                  </div>
-                </div>
+                const status =
+                  (booking.status ??
+                    "pending") as BookingStatus;
 
-                {(b.aiStyle || b.haircutBrief || b.referenceImage) ? (
-                  <div className="rounded-[22px] border border-[#ff355d]/20 bg-[#ff355d]/5 p-4">
-                    <div className="text-xs font-black uppercase tracking-[0.18em] text-[#ff355d]">
-                      AI Haircut Brief
+                return (
+                  <article
+                    key={
+                      booking.id
+                    }
+                    className="rounded-[28px] border border-black/10 bg-white p-6 shadow-sm"
+                  >
+                    <div className="flex flex-wrap justify-between gap-4">
+                      <div>
+                        <h3 className="text-xl font-black">
+                          {
+                            booking.serviceName
+                          }
+                        </h3>
+
+                        <p className="mt-2 text-sm text-neutral-500">
+                          {formatDate(
+                            booking.date
+                          )}
+                          {" • "}
+                          {
+                            booking.time
+                          }
+                          {" • "}
+                          {
+                            booking.durationMin
+                          }{" "}
+                          min
+                        </p>
+
+                        <p className="mt-1 text-sm text-neutral-500">
+                          Customer:{" "}
+                          {
+                            booking.userEmail
+                          }
+                        </p>
+                      </div>
+
+                      <div className="text-right">
+                        <span className="rounded-full bg-neutral-100 px-3 py-2 text-xs font-black">
+                          {statusLabel(
+                            status
+                          )}
+                        </span>
+
+                        <p className="mt-3 text-xl font-black text-[#ff355d]">
+                          {fmtEUR(
+                            Number(
+                              booking.totalEuro
+                            ) || 0
+                          )}
+                        </p>
+                      </div>
                     </div>
 
-                    {b.aiStyle ? (
-                      <div className="mt-2 text-lg font-black">{b.aiStyle}</div>
+                    {(booking.aiStyle ||
+                      booking.haircutBrief ||
+                      booking.referenceImage) ? (
+                      <div className="mt-5 rounded-[22px] border border-[#ff355d]/20 bg-[#ff355d]/5 p-4">
+                        <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff355d]">
+                          AI haircut brief
+                        </p>
+
+                        {booking.aiStyle ? (
+                          <h4 className="mt-2 text-lg font-black">
+                            {
+                              booking.aiStyle
+                            }
+                          </h4>
+                        ) : null}
+
+                        {booking.haircutBrief ? (
+                          <p className="mt-2 text-sm leading-6 text-neutral-700">
+                            {
+                              booking.haircutBrief
+                            }
+                          </p>
+                        ) : null}
+
+                        {booking.referenceImage ? (
+                          <img
+                            src={
+                              booking.referenceImage
+                            }
+                            alt="Haircut reference"
+                            className="mt-4 h-64 w-full rounded-[22px] object-cover"
+                          />
+                        ) : null}
+                      </div>
                     ) : null}
 
-                    {b.haircutBrief ? (
-                      <p className="mt-2 text-sm leading-6 text-neutral-700">
-                        {b.haircutBrief}
-                      </p>
-                    ) : null}
+                    <div className="mt-5 grid gap-3 md:grid-cols-3">
+                      <InfoCard title="Booking">
+                        <InfoRow
+                          label="Reserved"
+                          value={
+                            booking
+                              .reservedTimes
+                              ?.length
+                              ? booking.reservedTimes.join(
+                                  ", "
+                                )
+                              : booking.time
+                          }
+                        />
 
-                    {b.referenceImage ? (
-                      <img
-                        src={b.referenceImage}
-                        alt="Haircut reference"
-                        className="mt-4 h-64 w-full rounded-[22px] object-cover"
-                      />
-                    ) : null}
-                  </div>
-                ) : null}
+                        <InfoRow
+                          label="Booking ID"
+                          value={
+                            booking.id
+                          }
+                        />
+                      </InfoCard>
 
-                <div
-                  style={{
-                    display: "grid",
-                    gap: 10,
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  }}
-                >
-                  <InfoCard title="Booking">
-                    <InfoRow
-                      label="Reserved slots"
-                      value={b.reservedTimes?.length ? b.reservedTimes.join(", ") : b.time}
-                    />
-                    <InfoRow label="Booking ID" value={b.id.slice(0, 10)} />
-                    <InfoRow label="Created" value={new Date(b.createdAt).toLocaleString()} />
-                  </InfoCard>
+                      <InfoCard title="Money">
+                        <InfoRow
+                          label="Service"
+                          value={fmtEUR(
+                            Number(
+                              booking.servicePriceEuro
+                            ) || 0
+                          )}
+                        />
 
-                  <InfoCard title="Money">
-                    <InfoRow label="Service final" value={fmtEUR(Number(b.servicePriceEuro) || 0)} />
-                    <InfoRow label="Tip" value={fmtEUR(Number(b.tipEuro) || 0)} />
-                    <InfoRow label="Total" value={fmtEUR(Number(b.totalEuro) || 0)} strong />
-                  </InfoCard>
+                        <InfoRow
+                          label="Tip"
+                          value={fmtEUR(
+                            Number(
+                              booking.tipEuro
+                            ) || 0
+                          )}
+                        />
 
-                  <InfoCard title="Actions">
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {(["pending", "confirmed", "completed", "no_show", "cancelled"] as const).map(
-                        (s) => (
-                          <button
-                            key={s}
-                            className="btn btn-secondary"
-                            onClick={() => patchStatus(b.id, s)}
-                          >
-                            {s === "no_show" ? "No-show" : s[0].toUpperCase() + s.slice(1)}
-                          </button>
-                        )
-                      )}
+                        <InfoRow
+                          label="Total"
+                          value={fmtEUR(
+                            Number(
+                              booking.totalEuro
+                            ) || 0
+                          )}
+                          strong
+                        />
+                      </InfoCard>
+
+                      <InfoCard title="Status">
+                        <select
+                          disabled={busy}
+                          value={status}
+                          onChange={(event) =>
+                            void patchStatus(
+                              booking.id,
+                              event
+                                .target
+                                .value as BookingStatus
+                            )
+                          }
+                          className="h-11 w-full rounded-2xl border border-black/10 bg-neutral-50 px-3 text-sm font-bold outline-none disabled:opacity-50"
+                        >
+                          <option value="pending">
+                            Pending
+                          </option>
+
+                          <option value="confirmed">
+                            Confirmed
+                          </option>
+
+                          <option value="completed">
+                            Completed
+                          </option>
+
+                          <option value="no_show">
+                            No-show
+                          </option>
+
+                          <option value="cancelled">
+                            Cancelled
+                          </option>
+                        </select>
+                      </InfoCard>
                     </div>
-                  </InfoCard>
-                </div>
-              </div>
-            ))}
+                  </article>
+                );
+              }
+            )}
           </div>
         )}
       </div>
     </WebShell>
+  );
+}
+
+function PortalNav() {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Nav href="/portal/barber">
+        ← Dashboard
+      </Nav>
+      <Nav href="/portal/barber/schedule">
+        Schedule
+      </Nav>
+      <Nav href="/portal/barber/availability">
+        Availability
+      </Nav>
+      <Nav href="/portal/barber/earnings">
+        Earnings
+      </Nav>
+    </div>
+  );
+}
+
+function Nav({
+  href,
+  children,
+}: {
+  href: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      className="rounded-full border border-black/10 bg-white px-4 py-2.5 text-sm font-black hover:bg-neutral-50"
+    >
+      {children}
+    </Link>
   );
 }
 
@@ -410,16 +713,14 @@ function InfoCard({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      style={{
-        borderRadius: 16,
-        border: "1px solid rgba(0,0,0,0.08)",
-        background: "rgba(0,0,0,0.02)",
-        padding: 14,
-      }}
-    >
-      <div style={{ fontWeight: 900, marginBottom: 8 }}>{title}</div>
-      <div style={{ display: "grid", gap: 8 }}>{children}</div>
+    <div className="rounded-[20px] border border-black/10 bg-neutral-50 p-4">
+      <p className="mb-3 text-xs font-black uppercase tracking-wide text-neutral-400">
+        {title}
+      </p>
+
+      <div className="grid gap-2">
+        {children}
+      </div>
     </div>
   );
 }
@@ -434,41 +735,20 @@ function InfoRow({
   strong?: boolean;
 }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-      <div className="theme-muted" style={{ fontSize: 13, fontWeight: 800 }}>
+    <div className="flex justify-between gap-3 text-sm">
+      <span className="font-bold text-neutral-500">
         {label}
-      </div>
-      <div style={{ fontSize: 13, fontWeight: strong ? 950 : 800, textAlign: "right" }}>
+      </span>
+
+      <span
+        className={
+          strong
+            ? "text-right font-black"
+            : "text-right font-bold"
+        }
+      >
         {value}
-      </div>
+      </span>
     </div>
   );
 }
-
-function Denied({ role, reason }: { role: string; reason: string | null }) {
-  return (
-    <WebShell title="Access denied" subtitle="You do not have permission to open this page.">
-      <div className="mx-auto max-w-4xl">
-        <div className="theme-card" style={{ padding: 18 }}>
-          <div style={{ fontWeight: 900, fontSize: 18 }}>
-            {reason === "not_logged_in" ? "Please log in" : "Wrong account type"}
-          </div>
-          <div className="theme-muted" style={{ marginTop: 8 }}>
-            This page is only available for {role} accounts.
-          </div>
-        </div>
-      </div>
-    </WebShell>
-  );
-}
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  height: 44,
-  padding: "0 12px",
-  borderRadius: 14,
-  border: "1px solid rgba(0,0,0,0.10)",
-  background: "rgba(0,0,0,0.02)",
-  outline: "none",
-  fontWeight: 800,
-};

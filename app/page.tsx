@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   CalendarCheck,
@@ -53,6 +54,11 @@ function calcDynamicPriceEuro(
 }
 
 export default function HomePage() {
+  const searchParams = useSearchParams();
+
+  const selectedHairstyle = searchParams.get("hairstyle") || "";
+  const recommendationId = searchParams.get("recommendationId") || "";
+
   const [barbers, setBarbers] = useState<CustomerBarber[]>([]);
   const [tick] = useState(0);
 
@@ -126,6 +132,27 @@ export default function HomePage() {
 
           <HowItWorks />
 
+          {selectedHairstyle ? (
+            <div className="mt-10 rounded-[28px] border border-[#ff355d]/20 bg-[#ff355d]/5 p-5">
+              <div className="flex items-start gap-3">
+                <div className="rounded-2xl bg-[#ff355d]/10 p-3 text-[#ff355d]">
+                  <Sparkles size={20} />
+                </div>
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff355d]">
+                    Hairstyle selected
+                  </p>
+                  <h2 className="mt-1 text-2xl font-black text-neutral-950">
+                    {selectedHairstyle}
+                  </h2>
+                  <p className="mt-1 text-sm text-neutral-500">
+                    Choose a barber below to continue with this hairstyle.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           <section id="featured-barbers" className="mt-24">
             <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
               <SectionHeader
@@ -158,6 +185,8 @@ export default function HomePage() {
                     today={today}
                     currency={salon.currency}
                     tick={tick}
+                    selectedHairstyle={selectedHairstyle}
+                    recommendationId={recommendationId}
                   />
                 ))}
               </div>
@@ -234,8 +263,16 @@ function HeroSection({
 
           <div className="mt-6 flex flex-wrap gap-3">
   <Link
+    href="/hairstyle-advisor"
+    className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-4 text-sm font-black text-neutral-950 shadow-lg transition hover:-translate-y-0.5 hover:bg-neutral-100"
+  >
+    <Sparkles size={17} className="text-[#ff355d]" />
+    Find my hairstyle
+  </Link>
+
+  <Link
     href="/book-ai"
-    className="rounded-full bg-[#ff355d] px-6 py-4 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:bg-[#ff1f4c]"
+    className="rounded-full bg-[#ff355d] px-6 py-4 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:-translate-y-0.5 hover:bg-[#ff1f4c]"
   >
     Book with AI
   </Link>
@@ -380,19 +417,20 @@ function HowItWorks() {
 }
 
 function FeaturedBarberCard({
-  
   barber,
   today,
   currency,
   tick,
+  selectedHairstyle,
+  recommendationId,
 }: {
   barber: CustomerBarber;
   today: string;
   currency: string;
   tick: number;
-}
-)
- {
+  selectedHairstyle: string;
+  recommendationId: string;
+}) {
   const [services, setServices] = useState<Service[]>([]);
 
 useEffect(() => {
@@ -426,6 +464,51 @@ const cheapest = useMemo(() => {
   );
 
   const previewSlots = slots.slice(0, 3);
+
+  function buildBarberUrl() {
+    const params = new URLSearchParams();
+
+    if (selectedHairstyle) {
+      params.set("hairstyle", selectedHairstyle);
+    }
+
+    if (recommendationId) {
+      params.set("recommendationId", recommendationId);
+    }
+
+    const query = params.toString();
+
+    return `/barbers/${encodeURIComponent(barber.id)}${
+      query ? `?${query}` : ""
+    }`;
+  }
+
+  function buildBookingUrl(options?: {
+    date?: string;
+    time?: string;
+  }) {
+    const params = new URLSearchParams({
+      barberId: barber.id,
+    });
+
+    if (options?.date) {
+      params.set("date", options.date);
+    }
+
+    if (options?.time) {
+      params.set("time", options.time);
+    }
+
+    if (selectedHairstyle) {
+      params.set("hairstyle", selectedHairstyle);
+    }
+
+    if (recommendationId) {
+      params.set("recommendationId", recommendationId);
+    }
+
+    return `/book?${params.toString()}`;
+  }
 
   return (
     <div className="group overflow-hidden rounded-[34px] border border-black/10 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(0,0,0,0.12)]">
@@ -510,11 +593,10 @@ const cheapest = useMemo(() => {
               {previewSlots.map((time) => (
                 <Link
                   key={time}
-                  href={`/book?barberId=${encodeURIComponent(
-                    barber.id
-                  )}&date=${encodeURIComponent(today)}&time=${encodeURIComponent(
-                    time
-                  )}`}
+                  href={buildBookingUrl({
+                    date: today,
+                    time,
+                  })}
                   className="rounded-full border border-black/10 bg-neutral-50 px-4 py-2 text-sm font-black transition hover:border-[#ff355d]/30 hover:bg-[#ff355d] hover:text-white"
                 >
                   {time}
@@ -526,14 +608,14 @@ const cheapest = useMemo(() => {
 
         <div className="mt-6 grid grid-cols-2 gap-3">
           <Link
-            href={`/barbers/${encodeURIComponent(barber.id)}`}
+            href={buildBarberUrl()}
             className="rounded-full border border-black/10 bg-white px-4 py-3 text-center text-sm font-black transition hover:bg-neutral-50"
           >
             View profile
           </Link>
 
           <Link
-            href={`/book?barberId=${encodeURIComponent(barber.id)}`}
+            href={buildBookingUrl()}
             className="rounded-full bg-[#ff355d] px-4 py-3 text-center text-sm font-black text-white shadow-lg shadow-[#ff355d]/20 transition hover:bg-[#ff1f4c]"
           >
             Book now
@@ -622,6 +704,14 @@ function FinalCTA() {
 
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <Link
+            href="/hairstyle-advisor"
+            className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-4 text-sm font-black text-neutral-950 transition hover:bg-neutral-100"
+          >
+            <Sparkles size={17} className="text-[#ff355d]" />
+            Find my hairstyle
+          </Link>
+
+          <Link
             href="#featured-barbers"
             className="rounded-full bg-[#ff355d] px-6 py-4 text-sm font-black text-white transition hover:bg-[#ff1f4c]"
           >
@@ -630,7 +720,7 @@ function FinalCTA() {
 
           <Link
             href="/book"
-            className="rounded-full bg-white px-6 py-4 text-sm font-black text-neutral-950 transition hover:bg-neutral-100"
+            className="rounded-full border border-white/15 bg-white/10 px-6 py-4 text-sm font-black text-white transition hover:bg-white hover:text-neutral-950"
           >
             Book now
           </Link>

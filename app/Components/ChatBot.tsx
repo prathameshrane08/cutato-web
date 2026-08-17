@@ -30,16 +30,31 @@ import {
   type ChatMessage,
 } from "@/app/lib/ChatBot";
 
-import { getBestActiveBarberFromSupabase } from "@/app/lib/barbersSupabase";
+import {
+  getHairstyleRecommendations,
+} from "@/app/lib/hairstyleAdvisor/scoring";
 
-import { getBestServiceForBarberFromSupabase } from "@/app/lib/servicesStore";
+import type {
+  FaceShape,
+  FacialHair,
+  HairCondition,
+  HairLength,
+  HairTexture,
+  HairThickness,
+  HairstyleProfile,
+  HairstyleRecommendation,
+  PreferredLook,
+  StylingEffort,
+} from "@/app/lib/hairstyleAdvisor/types";
 
-import { generateSlotsForDate } from "@/app/lib/availabilityStore";
-
-import { getReservedTimesForBarber } from "@/app/lib/availabilitySupabase";
 
 type ChatUIMessage = ChatMessage & {
   imageUrl?: string;
+  showHairstyleActions?: boolean;
+  showPhotoAnalysisActions?: boolean;
+  showStylingEffortActions?: boolean;
+  showPreferredLookActions?: boolean;
+  recommendations?: HairstyleRecommendation[];
 };
 
 function uid(prefix = "chat") {
@@ -48,115 +63,59 @@ function uid(prefix = "chat") {
     .slice(2)}_${Date.now().toString(16)}`;
 }
 
+function isHairstyleAdvisorRequest(text: string) {
+  const normalized = text.toLowerCase().trim();
+
+  const phrases = [
+    "suggest me a hairstyle",
+    "suggest a hairstyle",
+    "recommend a hairstyle",
+    "recommend me a hairstyle",
+    "recommend a haircut",
+    "recommend me a haircut",
+    "which haircut suits me",
+    "which hairstyle suits me",
+    "what haircut suits me",
+    "what hairstyle suits me",
+    "what haircut should i get",
+    "what hairstyle should i get",
+    "help me choose a hairstyle",
+    "help me choose a haircut",
+    "find my hairstyle",
+    "find me a hairstyle",
+    "hairstyle advisor",
+    "hairstyle consultation",
+    "hair consultation",
+  ];
+
+  return phrases.some((phrase) =>
+    normalized.includes(phrase)
+  );
+}
+
 function removeAssistantCommands(text: string) {
   return text
+    .replace(
+      /BOOKING_PAYLOAD[\s\S]*?END_BOOKING_PAYLOAD/gi,
+      ""
+    )
     .split("\n")
     .filter((line) => {
       const clean = line.trim();
 
-      if (!clean) {
-        return true;
-      }
+      const hiddenCommands = [
+        "OPEN_BOOKINGS",
+        "OPEN_HOME",
+        "OPEN_BARBER_PORTAL",
+        "OPEN_SALON_PORTAL",
+        "OPEN_HAIRSTYLE_ADVISOR",
+        "BOOKING_INTENT",
+      ];
 
-      if (clean === "OPEN_BOOKINGS") {
-        return false;
-      }
-
-      if (clean === "OPEN_HOME") {
-        return false;
-      }
-
-      if (clean === "OPEN_BARBER_PORTAL") {
-        return false;
-      }
-
-      if (clean === "OPEN_SALON_PORTAL") {
-        return false;
-      }
-
-      if (clean === "BOOKING_INTENT") {
-        return false;
-      }
-
-      if (clean.startsWith("date=")) {
-        return false;
-      }
-
-      if (clean.startsWith("time=")) {
-        return false;
-      }
-
-      if (clean.startsWith("service=")) {
-        return false;
-      }
-
-      if (clean.startsWith("barber=")) {
-        return false;
-      }
-
-      return true;
+      return !hiddenCommands.includes(clean);
     })
     .join("\n")
     .trim();
-}
-
-function dayKey(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function addDays(base: Date, numberOfDays: number) {
-  const date = new Date(base);
-
-  date.setDate(date.getDate() + numberOfDays);
-
-  return date;
-}
-
-function preferredSlot(
-  slots: string[],
-  query: string
-) {
-  const lowerQuery = query.toLowerCase();
-
-  if (
-    lowerQuery.includes("evening") ||
-    lowerQuery.includes("after 6")
-  ) {
-    return (
-      slots.find((slot) => slot >= "18:00") ??
-      slots.find((slot) => slot >= "17:00") ??
-      slots[0]
-    );
-  }
-
-  if (lowerQuery.includes("afternoon")) {
-    return (
-      slots.find((slot) => slot >= "13:00") ??
-      slots[0]
-    );
-  }
-
-  if (lowerQuery.includes("morning")) {
-    return (
-      slots.find(
-        (slot) =>
-          slot >= "09:00" &&
-          slot <= "12:00"
-      ) ?? slots[0]
-    );
-  }
-
-  return slots[0];
-}
-
-function preferredDate(query: string) {
-  const lowerQuery = query.toLowerCase();
-
-  if (lowerQuery.includes("tomorrow")) {
-    return dayKey(addDays(new Date(), 1));
-  }
-
-  return dayKey(new Date());
 }
 
 function fileToBase64(file: File) {
@@ -219,6 +178,141 @@ function getSupportedAudioMimeType() {
   );
 }
 
+function formatDateKey(date: Date) {
+  const year = date.getFullYear();
+
+  const month = String(
+    date.getMonth() + 1
+  ).padStart(2, "0");
+
+  const day = String(
+    date.getDate()
+  ).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeBookingDate(
+  value: string
+) {
+  const normalized =
+    value.toLowerCase().trim();
+
+  if (normalized === "today") {
+    return formatDateKey(
+      new Date()
+    );
+  }
+
+  if (normalized === "tomorrow") {
+    const tomorrow = new Date();
+
+    tomorrow.setDate(
+      tomorrow.getDate() + 1
+    );
+
+    return formatDateKey(
+      tomorrow
+    );
+  }
+
+  if (
+    /^\d{4}-\d{2}-\d{2}$/.test(
+      normalized
+    )
+  ) {
+    return normalized;
+  }
+
+  return "";
+}
+
+function normalizeBookingTime(
+  value: string
+) {
+  const normalized =
+    value.trim().toLowerCase();
+
+  const twentyFourHour =
+    normalized.match(
+      /^(\d{1,2}):(\d{2})$/
+    );
+
+  if (twentyFourHour) {
+    const hour =
+      Number(twentyFourHour[1]);
+
+    const minute =
+      Number(twentyFourHour[2]);
+
+    if (
+      hour >= 0 &&
+      hour <= 23 &&
+      minute >= 0 &&
+      minute <= 59
+    ) {
+      return `${String(hour).padStart(
+        2,
+        "0"
+      )}:${String(minute).padStart(
+        2,
+        "0"
+      )}`;
+    }
+  }
+
+  const twelveHour =
+    normalized.match(
+      /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/
+    );
+
+  if (twelveHour) {
+    let hour =
+      Number(twelveHour[1]);
+
+    const minute =
+      Number(
+        twelveHour[2] ?? "0"
+      );
+
+    const period =
+      twelveHour[3];
+
+    if (
+      hour < 1 ||
+      hour > 12 ||
+      minute < 0 ||
+      minute > 59
+    ) {
+      return "";
+    }
+
+    if (
+      period === "pm" &&
+      hour !== 12
+    ) {
+      hour += 12;
+    }
+
+    if (
+      period === "am" &&
+      hour === 12
+    ) {
+      hour = 0;
+    }
+
+    return `${String(hour).padStart(
+      2,
+      "0"
+    )}:${String(minute).padStart(
+      2,
+      "0"
+    )}`;
+  }
+
+  return "";
+}
+
 export default function ChatBot() {
   const pathname = usePathname();
   const router = useRouter();
@@ -245,6 +339,21 @@ export default function ChatBot() {
     selectedImagePreview,
     setSelectedImagePreview,
   ] = useState<string | null>(null);
+
+  const [
+    imagePurpose,
+    setImagePurpose,
+  ] = useState<"chat" | "hairstyle">("chat");
+
+  const [
+    detectedHairstyleProfile,
+    setDetectedHairstyleProfile,
+  ] = useState<Partial<HairstyleProfile> | null>(null);
+
+  const [
+    selectedStylingEffort,
+    setSelectedStylingEffort,
+  ] = useState<StylingEffort>("unknown");
 
   const [
     historyLoaded,
@@ -467,8 +576,107 @@ export default function ChatBot() {
 
   function executeAssistantCommand(
     replyText: string,
-    originalQuery: string
+    _originalQuery: string
   ) {
+    //--------------------------------------------------
+    // AI booking payload
+    //--------------------------------------------------
+
+    if (replyText.includes("BOOKING_PAYLOAD")) {
+      const payloadMatch = replyText.match(
+        /BOOKING_PAYLOAD([\s\S]*?)END_BOOKING_PAYLOAD/i
+      );
+
+      if (!payloadMatch) {
+        console.error(
+          "BOOKING_PAYLOAD markers were found, but the payload could not be parsed.",
+          replyText
+        );
+
+        return false;
+      }
+
+      const payloadText = payloadMatch[1];
+
+      function getPayloadValue(key: string) {
+        const pattern = new RegExp(
+          `${key}=([^\n\r]+)`,
+          "i"
+        );
+
+        const match = payloadText.match(pattern);
+
+        return match?.[1]?.trim() ?? "";
+      }
+
+      const barberId = getPayloadValue("barberId");
+      const serviceId = getPayloadValue("serviceId");
+      const rawDate =
+        getPayloadValue("date");
+
+      const rawTime =
+        getPayloadValue("time");
+
+      const date =
+        normalizeBookingDate(
+          rawDate
+        );
+
+      const time =
+        normalizeBookingTime(
+          rawTime
+        );
+
+      console.log("PARSED BOOKING PAYLOAD:", {
+        barberId,
+        serviceId,
+        rawDate,
+        date,
+        rawTime,
+        time,
+      });
+
+      const validDate =
+        Boolean(date);
+
+      const validTime =
+        Boolean(time);
+
+      if (
+        !barberId ||
+        !serviceId ||
+        !validDate ||
+        !validTime
+      ) {
+        console.warn("Invalid booking payload:", {
+          barberId,
+          serviceId,
+          rawDate,
+          date,
+          rawTime,
+          time,
+          rawPayload: payloadText,
+        });
+
+
+        return false;
+      }
+
+      const searchParams = new URLSearchParams({
+        barberId,
+        serviceId,
+        date,
+        time,
+      });
+
+      window.setTimeout(() => {
+        router.push(`/book?${searchParams.toString()}`);
+        setOpen(false);
+      }, 900);
+
+      return true;
+    }
+
     if (replyText.includes("OPEN_BOOKINGS")) {
       window.setTimeout(() => {
         router.push("/bookings");
@@ -487,11 +695,7 @@ export default function ChatBot() {
       return true;
     }
 
-    if (
-      replyText.includes(
-        "OPEN_BARBER_PORTAL"
-      )
-    ) {
+    if (replyText.includes("OPEN_BARBER_PORTAL")) {
       window.setTimeout(() => {
         router.push("/portal/barber");
         setOpen(false);
@@ -500,11 +704,7 @@ export default function ChatBot() {
       return true;
     }
 
-    if (
-      replyText.includes(
-        "OPEN_SALON_PORTAL"
-      )
-    ) {
+    if (replyText.includes("OPEN_SALON_PORTAL")) {
       window.setTimeout(() => {
         router.push("/portal/salon");
         setOpen(false);
@@ -513,98 +713,13 @@ export default function ChatBot() {
       return true;
     }
 
+    // Hairstyle requests stay inside the chat so the
+    // user can choose how they want to start.
     if (
-      replyText.includes("BOOKING_INTENT")
+      replyText.includes(
+        "OPEN_HAIRSTYLE_ADVISOR"
+      )
     ) {
-      void (async () => {
-        try {
-          const barber =
-            await getBestActiveBarberFromSupabase();
-
-          const service = barber?.id
-            ? await getBestServiceForBarberFromSupabase(
-                barber.id,
-                originalQuery
-              )
-            : null;
-
-          const date =
-            preferredDate(originalQuery);
-
-          let selectedTime = "";
-
-          if (barber?.id && service) {
-            const generated =
-              generateSlotsForDate(
-                barber.id,
-                date,
-                service.durationMin
-              );
-
-            const reserved =
-              await getReservedTimesForBarber(
-                barber.id,
-                date
-              );
-
-            const taken = new Set(reserved);
-
-            const available =
-              generated.filter(
-                (slot) => !taken.has(slot)
-              );
-
-            selectedTime =
-              preferredSlot(
-                available,
-                originalQuery
-              ) ?? "";
-          }
-
-          window.setTimeout(() => {
-            if (barber?.id && service?.id) {
-              const searchParams =
-                new URLSearchParams({
-                  barberId: barber.id,
-                  serviceId: service.id,
-                  date,
-                });
-
-              if (selectedTime) {
-                searchParams.set(
-                  "time",
-                  selectedTime
-                );
-              }
-
-              router.push(
-                `/book?${searchParams.toString()}`
-              );
-            } else if (barber?.id) {
-              router.push(
-                `/book?barberId=${encodeURIComponent(
-                  barber.id
-                )}`
-              );
-            } else {
-              router.push("/");
-            }
-
-            setOpen(false);
-          }, 900);
-        } catch (error) {
-          console.error(
-            "AI booking redirect failed:",
-            error
-          );
-
-          window.setTimeout(() => {
-            router.push("/");
-            setOpen(false);
-          }, 900);
-        }
-      })();
-
       return true;
     }
 
@@ -680,9 +795,14 @@ export default function ChatBot() {
           role: "bot",
           text:
             cleanText ||
-            "Opening the right page for you.",
+            "How would you like to continue?",
           createdAt:
             new Date().toISOString(),
+          showHairstyleActions:
+            isHairstyleAdvisorRequest(trimmed) ||
+            replyText.includes(
+              "OPEN_HAIRSTYLE_ADVISOR"
+            ),
         };
 
         setMessages((previous) => [
@@ -770,7 +890,12 @@ export default function ChatBot() {
                 ...message,
                 text:
                   finalVisibleText ||
-                  "Opening the right page for you.",
+                  "How would you like to continue?",
+                showHairstyleActions:
+                  isHairstyleAdvisorRequest(trimmed) ||
+                  streamedText.includes(
+                    "OPEN_HAIRSTYLE_ADVISOR"
+                  ),
               }
             : message
         )
@@ -797,10 +922,15 @@ export default function ChatBot() {
         id: uid("bot"),
         role: "bot",
         text:
-          fallback ||
+          removeAssistantCommands(fallback) ||
           "Something went wrong. Please try again.",
         createdAt:
           new Date().toISOString(),
+        showHairstyleActions:
+          isHairstyleAdvisorRequest(trimmed) ||
+          fallback.includes(
+            "OPEN_HAIRSTYLE_ADVISOR"
+          ),
       };
 
       setMessages((previous) => [
@@ -1122,6 +1252,257 @@ export default function ChatBot() {
     void pushUserMessage(prompt, null);
   }
 
+  function startHairstylePhotoFlow() {
+    setImagePurpose("hairstyle");
+    setInput("");
+    fileInputRef.current?.click();
+  }
+
+  function startHairstyleManualFlow() {
+    router.push(
+      "/hairstyle-advisor?mode=manual"
+    );
+
+    setOpen(false);
+  }
+
+  function openFullHairstyleAdvisor() {
+    router.push(
+      "/hairstyle-advisor"
+    );
+
+    setOpen(false);
+  }
+
+  async function analyseHairstylePhoto(
+    imageDataUrl: string
+  ) {
+    const analysingId = uid("bot");
+
+    setIsTyping(true);
+
+    setMessages((previous) => [
+      ...previous,
+      {
+        id: analysingId,
+        role: "bot",
+        text:
+          "✨ I’m analysing your face shape and hair characteristics...",
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+
+    try {
+      const response = await fetch(
+        "/api/hairstyle-advisor",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            image: imageDataUrl,
+          }),
+        }
+      );
+
+      const analysis = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          analysis?.error ??
+            "The photo could not be analysed."
+        );
+      }
+
+      const confidence =
+        typeof analysis?.confidence === "number"
+          ? Math.round(analysis.confidence * 100)
+          : null;
+
+      const detectedProfile: Partial<HairstyleProfile> = {
+        faceShape: (analysis.faceShape ?? "unknown") as FaceShape,
+        hairTexture: (analysis.hairTexture ?? "unknown") as HairTexture,
+        hairThickness: (analysis.hairThickness ?? "unknown") as HairThickness,
+        hairCondition: (analysis.hairCondition ?? "unknown") as HairCondition,
+        currentLength: (analysis.currentLength ?? "unknown") as HairLength,
+        facialHair: (analysis.facialHair ?? "unknown") as FacialHair,
+      };
+
+      setDetectedHairstyleProfile(detectedProfile);
+      setSelectedStylingEffort("unknown");
+
+      const resultText = [
+        "✨ **Photo analysis complete**",
+        "",
+        `**Face shape:** ${analysis.faceShape ?? "Not detected"}`,
+        `**Hair texture:** ${analysis.hairTexture ?? "Not detected"}`,
+        `**Hair thickness:** ${analysis.hairThickness ?? "Not detected"}`,
+        `**Hair condition:** ${analysis.hairCondition ?? "Not detected"}`,
+        `**Current length:** ${analysis.currentLength ?? "Not detected"}`,
+        `**Facial hair:** ${analysis.facialHair ?? "Not detected"}`,
+        `**Hairline:** ${analysis.hairline ?? "Not detected"}`,
+        ...(confidence !== null
+          ? ["", `**Analysis confidence:** ${confidence}%`]
+          : []),
+        "",
+        "I only need two more preferences to calculate your top hairstyle matches.",
+        "",
+        "**How much time do you want to spend styling your hair?**",
+      ].join("\n");
+
+      setMessages((previous) =>
+        previous.map((message) =>
+          message.id === analysingId
+            ? {
+                ...message,
+                text: resultText,
+                showStylingEffortActions: true,
+                showPhotoAnalysisActions: false,
+              }
+            : message
+        )
+      );
+    } catch (error) {
+      console.error(
+        "Hairstyle photo analysis failed:",
+        error
+      );
+
+      setMessages((previous) =>
+        previous.map((message) =>
+          message.id === analysingId
+            ? {
+                ...message,
+                text:
+                  "I couldn’t analyse that photo. Please try another clear front-facing photo, or continue with the manual hairstyle consultation.",
+                showPhotoAnalysisActions: true,
+              }
+            : message
+        )
+      );
+    } finally {
+      setIsTyping(false);
+      setImagePurpose("chat");
+    }
+  }
+
+  function chooseStylingEffort(
+    value: StylingEffort,
+    label: string
+  ) {
+    setSelectedStylingEffort(value);
+
+    setMessages((previous) => [
+      ...previous.map((message) => ({
+        ...message,
+        showStylingEffortActions: false,
+      })),
+      {
+        id: uid("user"),
+        role: "user",
+        text: `Styling effort: ${label}`,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: uid("bot"),
+        role: "bot",
+        text: [
+          "Great. One last preference.",
+          "",
+          "**What kind of overall look do you prefer?**",
+        ].join("\n"),
+        createdAt: new Date().toISOString(),
+        showPreferredLookActions: true,
+      },
+    ]);
+  }
+
+  function choosePreferredLook(
+    value: PreferredLook,
+    label: string
+  ) {
+    if (!detectedHairstyleProfile) {
+      setMessages((previous) => [
+        ...previous,
+        {
+          id: uid("bot"),
+          role: "bot",
+          text:
+            "I no longer have the photo analysis in this session. Please upload the photo again.",
+          createdAt: new Date().toISOString(),
+          showHairstyleActions: true,
+        },
+      ]);
+      return;
+    }
+
+    const profile: HairstyleProfile = {
+      faceShape:
+        (detectedHairstyleProfile.faceShape as FaceShape) ?? "unknown",
+      hairTexture:
+        (detectedHairstyleProfile.hairTexture as HairTexture) ?? "unknown",
+      hairThickness:
+        (detectedHairstyleProfile.hairThickness as HairThickness) ?? "unknown",
+      hairCondition:
+        (detectedHairstyleProfile.hairCondition as HairCondition) ?? "unknown",
+      currentLength:
+        (detectedHairstyleProfile.currentLength as HairLength) ?? "unknown",
+      stylingEffort: selectedStylingEffort,
+      preferredLook: value,
+      facialHair:
+        (detectedHairstyleProfile.facialHair as FacialHair) ?? "unknown",
+    };
+
+    const recommendations =
+      getHairstyleRecommendations(profile, 3);
+
+    const summary = recommendations
+      .map(
+        (recommendation, index) =>
+          `${index + 1}. **${recommendation.name}** — ${recommendation.matchScore}% match`
+      )
+      .join("\n");
+
+    setMessages((previous) => [
+      ...previous.map((message) => ({
+        ...message,
+        showPreferredLookActions: false,
+      })),
+      {
+        id: uid("user"),
+        role: "user",
+        text: `Preferred look: ${label}`,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: uid("bot"),
+        role: "bot",
+        text: [
+          "✨ **Your top hairstyle matches**",
+          "",
+          summary,
+          "",
+          "These recommendations use the same Cutato scoring engine as the full Hairstyle Advisor.",
+        ].join("\n"),
+        createdAt: new Date().toISOString(),
+        recommendations,
+      },
+    ]);
+  }
+
+  function bookRecommendedHairstyle(
+    recommendation: HairstyleRecommendation
+  ) {
+    const searchParams = new URLSearchParams({
+      hairstyle: recommendation.name,
+      recommendationId: recommendation.id,
+    });
+
+    router.push(`/book?${searchParams.toString()}`);
+    setOpen(false);
+  }
+
   function resetChat() {
     if (isRecording) {
       mediaRecorderRef.current?.stop();
@@ -1138,13 +1519,16 @@ export default function ChatBot() {
     setIsTyping(false);
     setIsRecording(false);
     setIsTranscribing(false);
+    setImagePurpose("chat");
+    setDetectedHairstyleProfile(null);
+    setSelectedStylingEffort("unknown");
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   }
 
-  function handleImageSelection(
+  async function handleImageSelection(
     event: React.ChangeEvent<HTMLInputElement>
   ) {
     const file =
@@ -1185,6 +1569,47 @@ export default function ChatBot() {
             new Date().toISOString(),
         },
       ]);
+
+      return;
+    }
+
+    if (imagePurpose === "hairstyle") {
+      try {
+        const imageDataUrl =
+          await fileToBase64(file);
+
+        const userMessage: ChatUIMessage = {
+          id: uid("user"),
+          role: "user",
+          text:
+            "Use this photo for my hairstyle consultation.",
+          imageUrl: imageDataUrl,
+          createdAt: new Date().toISOString(),
+        };
+
+        setMessages((previous) => [
+          ...previous,
+          userMessage,
+        ]);
+
+        setSelectedImage(null);
+        setSelectedImagePreview(null);
+
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+
+        await analyseHairstylePhoto(
+          imageDataUrl
+        );
+      } catch (error) {
+        console.error(
+          "Could not prepare hairstyle photo:",
+          error
+        );
+
+        setImagePurpose("chat");
+      }
 
       return;
     }
@@ -1335,6 +1760,202 @@ export default function ChatBot() {
                       >
                         {message.text}
                       </ReactMarkdown>
+
+                      {message.showHairstyleActions ? (
+                        <div className="mt-4 grid gap-2">
+                          <button
+                            type="button"
+                            onClick={
+                              startHairstylePhotoFlow
+                            }
+                            className="flex w-full items-center gap-3 rounded-2xl border border-[#ff355d]/20 bg-[#ff355d]/5 px-4 py-3 text-left text-sm font-black text-neutral-900 transition hover:border-[#ff355d]/40 hover:bg-[#ff355d]/10"
+                          >
+                            <ImagePlus
+                              size={18}
+                              className="text-[#ff355d]"
+                            />
+                            Upload photo
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={
+                              startHairstyleManualFlow
+                            }
+                            className="flex w-full items-center gap-3 rounded-2xl border border-black/10 bg-neutral-50 px-4 py-3 text-left text-sm font-black text-neutral-900 transition hover:bg-neutral-100"
+                          >
+                            <Sparkles
+                              size={18}
+                              className="text-[#ff355d]"
+                            />
+                            Answer a few questions
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={
+                              openFullHairstyleAdvisor
+                            }
+                            className="flex w-full items-center justify-between rounded-2xl bg-neutral-950 px-4 py-3 text-left text-sm font-black text-white transition hover:bg-neutral-800"
+                          >
+                            <span>
+                              Open full Hairstyle Advisor
+                            </span>
+
+                            <span aria-hidden="true">
+                              →
+                            </span>
+                          </button>
+                        </div>
+                      ) : null}
+
+                      {message.showPhotoAnalysisActions ? (
+                        <div className="mt-4 grid gap-2">
+                          <button
+                            type="button"
+                            onClick={startHairstylePhotoFlow}
+                            className="flex w-full items-center gap-3 rounded-2xl border border-[#ff355d]/20 bg-[#ff355d]/5 px-4 py-3 text-left text-sm font-black text-neutral-900 transition hover:border-[#ff355d]/40 hover:bg-[#ff355d]/10"
+                          >
+                            <ImagePlus
+                              size={18}
+                              className="text-[#ff355d]"
+                            />
+                            Try another photo
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={openFullHairstyleAdvisor}
+                            className="flex w-full items-center justify-between rounded-2xl bg-neutral-950 px-4 py-3 text-left text-sm font-black text-white transition hover:bg-neutral-800"
+                          >
+                            <span>Continue full consultation</span>
+                            <span aria-hidden="true">→</span>
+                          </button>
+                        </div>
+                      ) : null}
+
+                      {message.showStylingEffortActions ? (
+                        <div className="mt-4 grid grid-cols-2 gap-2">
+                          {[
+                            ["none", "No styling"],
+                            ["under-5", "Under 5 min"],
+                            ["five-to-ten", "5–10 min"],
+                            ["high", "10+ min"],
+                          ].map(([value, label]) => (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() =>
+                                chooseStylingEffort(
+                                  value as StylingEffort,
+                                  label
+                                )
+                              }
+                              className="rounded-2xl border border-black/10 bg-neutral-50 px-3 py-3 text-sm font-black text-neutral-900 transition hover:border-[#ff355d]/30 hover:bg-[#ff355d]/10 hover:text-[#ff355d]"
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {message.showPreferredLookActions ? (
+                        <div className="mt-4 grid gap-2">
+                          {[
+                            ["professional", "Professional"],
+                            ["modern", "Modern"],
+                            ["casual", "Casual"],
+                            ["bold", "Bold"],
+                            ["low-maintenance", "Low maintenance"],
+                          ].map(([value, label]) => (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() =>
+                                choosePreferredLook(
+                                  value as PreferredLook,
+                                  label
+                                )
+                              }
+                              className="flex w-full items-center justify-between rounded-2xl border border-black/10 bg-neutral-50 px-4 py-3 text-left text-sm font-black text-neutral-900 transition hover:border-[#ff355d]/30 hover:bg-[#ff355d]/10 hover:text-[#ff355d]"
+                            >
+                              <span>{label}</span>
+                              <span aria-hidden="true">→</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {message.recommendations?.length ? (
+                        <div className="mt-4 grid gap-3">
+                          {message.recommendations.map(
+                            (recommendation, index) => (
+                              <div
+                                key={recommendation.id}
+                                className="overflow-hidden rounded-2xl border border-black/10 bg-neutral-50"
+                              >
+                                {recommendation.imageUrl ? (
+                                  <img
+                                    src={recommendation.imageUrl}
+                                    alt={recommendation.name}
+                                    className="h-32 w-full object-cover"
+                                  />
+                                ) : null}
+
+                                <div className="p-4">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <p className="text-xs font-black uppercase tracking-wider text-[#ff355d]">
+                                        {index === 0
+                                          ? "Best match"
+                                          : `Match ${index + 1}`}
+                                      </p>
+                                      <h4 className="mt-1 text-base font-black">
+                                        {recommendation.name}
+                                      </h4>
+                                    </div>
+
+                                    <span className="rounded-full bg-neutral-950 px-3 py-1 text-xs font-black text-white">
+                                      {recommendation.matchScore}%
+                                    </span>
+                                  </div>
+
+                                  <p className="mt-2 text-xs leading-5 text-neutral-500">
+                                    {recommendation.description}
+                                  </p>
+
+                                  {recommendation.whyItSuitsYou[0] ? (
+                                    <p className="mt-2 text-xs font-bold leading-5 text-neutral-700">
+                                      {recommendation.whyItSuitsYou[0]}
+                                    </p>
+                                  ) : null}
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      bookRecommendedHairstyle(
+                                        recommendation
+                                      )
+                                    }
+                                    className="mt-4 w-full rounded-xl bg-[#ff355d] px-4 py-3 text-sm font-black text-white transition hover:bg-[#ff1f4c]"
+                                  >
+                                    Book this hairstyle
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={openFullHairstyleAdvisor}
+                            className="flex w-full items-center justify-between rounded-2xl bg-neutral-950 px-4 py-3 text-left text-sm font-black text-white transition hover:bg-neutral-800"
+                          >
+                            <span>Open full Hairstyle Advisor</span>
+                            <span aria-hidden="true">→</span>
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ) : (
@@ -1418,9 +2039,10 @@ export default function ChatBot() {
             <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-2">
               <button
                 type="button"
-                onClick={() =>
-                  fileInputRef.current?.click()
-                }
+                onClick={() => {
+                  setImagePurpose("chat");
+                  fileInputRef.current?.click();
+                }}
                 disabled={
                   isTyping ||
                   isRecording ||

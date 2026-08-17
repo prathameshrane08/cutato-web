@@ -425,3 +425,70 @@ export async function generateSlotsForDateFromSupabase(
 
   return slots;
 }
+
+// ==================================================
+// SALON-SCOPED PORTAL AVAILABILITY
+// These helpers intentionally use a salon-specific key
+// so a newly created salon never inherits another salon's
+// local development availability.
+// ==================================================
+
+function scopedSalonAvailabilityKey(salonId: string) {
+  return `cutato_availability_salon_v2_${salonId}`;
+}
+
+export function emptySalonAvailability(): SalonAvailability {
+  const closed = { open: false, start: "09:00", end: "18:00" };
+
+  return {
+    slotStepMin: 30,
+    week: {
+      mon: { ...closed },
+      tue: { ...closed },
+      wed: { ...closed },
+      thu: { ...closed },
+      fri: { ...closed },
+      sat: { ...closed },
+      sun: { ...closed },
+    },
+    updatedAt: undefined,
+  };
+}
+
+export function readSalonAvailabilityForSalon(
+  salonId: string
+): SalonAvailability | null {
+  if (typeof window === "undefined" || !salonId) return null;
+
+  const raw = localStorage.getItem(scopedSalonAvailabilityKey(salonId));
+  if (!raw) return null;
+
+  const parsed = safeParse<SalonAvailability>(raw);
+  return parsed ? normalizeSalonAvailability(parsed) : null;
+}
+
+export function writeSalonAvailabilityForSalon(
+  salonId: string,
+  availability: SalonAvailability
+) {
+  if (typeof window === "undefined" || !salonId) return;
+
+  const next: SalonAvailability = {
+    ...availability,
+    slotStepMin: 30,
+    updatedAt: new Date().toISOString(),
+  };
+
+  localStorage.setItem(
+    scopedSalonAvailabilityKey(salonId),
+    JSON.stringify(next)
+  );
+
+  emitStoreUpdate(scopedSalonAvailabilityKey(salonId));
+}
+
+export function clearSalonAvailabilityForSalon(salonId: string) {
+  if (typeof window === "undefined" || !salonId) return;
+  localStorage.removeItem(scopedSalonAvailabilityKey(salonId));
+  emitStoreUpdate(scopedSalonAvailabilityKey(salonId));
+}

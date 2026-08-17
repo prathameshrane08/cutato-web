@@ -1,9 +1,16 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = new Resend(
+  process.env.RESEND_API_KEY
+);
 
 const APP_URL =
-  process.env.NEXT_PUBLIC_APP_URL || "https://cutato-web.vercel.app";
+  process.env.NEXT_PUBLIC_APP_URL ||
+  "https://cutato-web.vercel.app";
+
+//==================================================
+// TYPES
+//==================================================
 
 type BookingEmailInput = {
   to: string;
@@ -28,71 +35,253 @@ type BarberBookingEmailInput = {
   haircutBrief?: string | null;
 };
 
-function money(v: number) {
-  return `€${Number(v || 0).toFixed(2)}`;
+type BarberApplicationInput = {
+  name: string;
+  email: string;
+  phone?: string;
+  city?: string;
+  experience?: string;
+  instagram?: string;
+};
+
+type SalonApplicationInput = {
+  salonName: string;
+  ownerName: string;
+  email: string;
+  phone?: string;
+  city?: string;
+  address?: string;
+};
+
+type ApprovalEmailInput = {
+  to: string;
+  role: "barber" | "salon";
+  temporaryPassword: string;
+};
+
+//==================================================
+// HELPERS
+//==================================================
+
+function money(
+  value: number
+) {
+  return `€${Number(
+    value || 0
+  ).toFixed(2)}`;
 }
 
-function row(label: string, value: string, big = false) {
+function row(
+  label: string,
+  value: string,
+  big = false
+) {
   return `
     <div style="margin-bottom:16px;">
-      <div style="font-size:12px;font-weight:800;color:#ff355d;letter-spacing:0.15em;text-transform:uppercase;">
+      <div
+        style="
+          font-size:12px;
+          font-weight:800;
+          color:#ff355d;
+          letter-spacing:0.15em;
+          text-transform:uppercase;
+        "
+      >
         ${label}
       </div>
-      <div style="margin-top:6px;font-size:${big ? "24px" : "20px"};font-weight:900;color:#111;">
+
+      <div
+        style="
+          margin-top:6px;
+          font-size:${big ? "24px" : "20px"};
+          font-weight:900;
+          color:#111;
+        "
+      >
         ${value}
       </div>
     </div>
   `;
 }
 
-export async function sendBookingConfirmationEmail(input: BookingEmailInput) {
+//==================================================
+// CUSTOMER BOOKING CONFIRMATION
+//==================================================
+
+export async function sendBookingConfirmationEmail(
+  input: BookingEmailInput
+) {
   try {
-    const { to, customerName, barberName, serviceName, date, time, totalEuro } =
-      input;
+    const {
+      to,
+      customerName,
+      barberName,
+      serviceName,
+      date,
+      time,
+      totalEuro,
+    } = input;
 
     return await resend.emails.send({
-      from: "Cutato <onboarding@resend.dev>",
+      from:
+        "Cutato <onboarding@resend.dev>",
+
       to,
-      subject: `Booking Confirmed • ${serviceName}`,
+
+      subject:
+        `Booking Confirmed • ${serviceName}`,
+
       html: `
-        <div style="font-family:Inter,Arial;padding:40px;background:#f5f5f5;">
-          <div style="max-width:620px;margin:auto;background:white;border-radius:28px;overflow:hidden;border:1px solid #eee;">
-            <div style="background:#0a0a0a;padding:48px;text-align:center;">
-              <div style="font-size:42px;font-weight:900;color:white;">CUTATO</div>
-              <div style="margin-top:14px;color:#ffffff99;font-size:16px;">Your appointment is confirmed</div>
+        <div
+          style="
+            font-family:Inter,Arial;
+            padding:40px;
+            background:#f5f5f5;
+          "
+        >
+          <div
+            style="
+              max-width:620px;
+              margin:auto;
+              background:white;
+              border-radius:28px;
+              overflow:hidden;
+              border:1px solid #eee;
+            "
+          >
+
+            <div
+              style="
+                background:#0a0a0a;
+                padding:48px;
+                text-align:center;
+              "
+            >
+              <div
+                style="
+                  font-size:42px;
+                  font-weight:900;
+                  color:white;
+                "
+              >
+                CUTATO
+              </div>
+
+              <div
+                style="
+                  margin-top:14px;
+                  color:#ffffff99;
+                  font-size:16px;
+                "
+              >
+                Your appointment is confirmed
+              </div>
             </div>
 
             <div style="padding:40px;">
-              <h1 style="font-size:34px;font-weight:900;margin:0;color:#111;">Booking Confirmed</h1>
 
-              <p style="margin-top:16px;font-size:16px;line-height:1.7;color:#555;">
-                Hi ${customerName || "there"}, your appointment has been successfully booked.
+              <h1
+                style="
+                  font-size:34px;
+                  font-weight:900;
+                  margin:0;
+                  color:#111;
+                "
+              >
+                Booking Confirmed
+              </h1>
+
+              <p
+                style="
+                  margin-top:16px;
+                  font-size:16px;
+                  line-height:1.7;
+                  color:#555;
+                "
+              >
+                Hi ${
+                  customerName ||
+                  "there"
+                }, your appointment has been successfully booked.
               </p>
 
-              <div style="margin-top:30px;background:#fafafa;border-radius:24px;padding:24px;border:1px solid #eee;">
-                ${row("Barber", barberName)}
-                ${row("Service", serviceName)}
-                ${row("Appointment", `${date} • ${time}`)}
-                ${row("Total Paid", money(totalEuro), true)}
+              <div
+                style="
+                  margin-top:30px;
+                  background:#fafafa;
+                  border-radius:24px;
+                  padding:24px;
+                  border:1px solid #eee;
+                "
+              >
+                ${row(
+                  "Barber",
+                  barberName
+                )}
+
+                ${row(
+                  "Service",
+                  serviceName
+                )}
+
+                ${row(
+                  "Appointment",
+                  `${date} • ${time}`
+                )}
+
+                ${row(
+                  "Total Paid",
+                  money(
+                    totalEuro
+                  ),
+                  true
+                )}
               </div>
 
-              <div style="margin-top:32px;text-align:center;">
-                <a href="${APP_URL}/bookings"
-                  style="display:inline-block;padding:16px 28px;background:#ff355d;color:white;text-decoration:none;border-radius:999px;font-weight:800;">
+              <div
+                style="
+                  margin-top:32px;
+                  text-align:center;
+                "
+              >
+                <a
+                  href="${APP_URL}/bookings"
+                  style="
+                    display:inline-block;
+                    padding:16px 28px;
+                    background:#ff355d;
+                    color:white;
+                    text-decoration:none;
+                    border-radius:999px;
+                    font-weight:800;
+                  "
+                >
                   Open My Bookings
                 </a>
               </div>
+
             </div>
           </div>
         </div>
       `,
     });
-  } catch (err) {
-    console.error("BOOKING EMAIL ERROR:", err);
+  } catch (error) {
+    console.error(
+      "BOOKING EMAIL ERROR:",
+      error
+    );
+
+    throw error;
   }
 }
 
-export async function sendBarberNewBookingEmail(input: BarberBookingEmailInput) {
+//==================================================
+// BARBER NEW BOOKING EMAIL
+//==================================================
+
+export async function sendBarberNewBookingEmail(
+  input: BarberBookingEmailInput
+) {
   try {
     const {
       to,
@@ -108,235 +297,661 @@ export async function sendBarberNewBookingEmail(input: BarberBookingEmailInput) 
     } = input;
 
     return await resend.emails.send({
-      from: "Cutato <onboarding@resend.dev>",
+      from:
+        "Cutato <onboarding@resend.dev>",
+
       to,
-      subject: `New Booking • ${serviceName}`,
+
+      subject:
+        `New Booking • ${serviceName}`,
+
       html: `
-        <div style="font-family:Inter,Arial;padding:40px;background:#f5f5f5;">
-          <div style="max-width:680px;margin:auto;background:white;border-radius:28px;overflow:hidden;border:1px solid #eee;">
-            <div style="background:#0a0a0a;padding:44px;text-align:center;">
-              <div style="font-size:40px;font-weight:900;color:white;">CUTATO</div>
-              <div style="margin-top:14px;color:#ffffff99;font-size:16px;">New appointment assigned to you</div>
+        <div
+          style="
+            font-family:Inter,Arial;
+            padding:40px;
+            background:#f5f5f5;
+          "
+        >
+          <div
+            style="
+              max-width:680px;
+              margin:auto;
+              background:white;
+              border-radius:28px;
+              overflow:hidden;
+              border:1px solid #eee;
+            "
+          >
+
+            <div
+              style="
+                background:#0a0a0a;
+                padding:44px;
+                text-align:center;
+              "
+            >
+              <div
+                style="
+                  font-size:40px;
+                  font-weight:900;
+                  color:white;
+                "
+              >
+                CUTATO
+              </div>
+
+              <div
+                style="
+                  margin-top:14px;
+                  color:#ffffff99;
+                  font-size:16px;
+                "
+              >
+                New appointment assigned to you
+              </div>
             </div>
 
             <div style="padding:40px;">
-              <h1 style="font-size:32px;font-weight:900;margin:0;color:#111;">New Booking</h1>
 
-              <p style="margin-top:16px;font-size:16px;line-height:1.7;color:#555;">
+              <h1
+                style="
+                  font-size:32px;
+                  font-weight:900;
+                  margin:0;
+                  color:#111;
+                "
+              >
+                New Booking
+              </h1>
+
+              <p
+                style="
+                  margin-top:16px;
+                  font-size:16px;
+                  line-height:1.7;
+                  color:#555;
+                "
+              >
                 Hi ${barberName}, a customer has booked an appointment with you.
               </p>
 
-              <div style="margin-top:28px;background:#fafafa;border-radius:24px;padding:24px;border:1px solid #eee;">
-                ${row("Customer", customerEmail)}
-                ${row("Service", serviceName)}
-                ${row("Appointment", `${date} • ${time}`)}
-                ${row("Payment", paymentMethod === "online" ? "Paid online" : "Pay at salon")}
-                ${row("Total", money(totalEuro), true)}
+              <div
+                style="
+                  margin-top:28px;
+                  background:#fafafa;
+                  border-radius:24px;
+                  padding:24px;
+                  border:1px solid #eee;
+                "
+              >
+
+                ${row(
+                  "Customer",
+                  customerEmail
+                )}
+
+                ${row(
+                  "Service",
+                  serviceName
+                )}
+
+                ${row(
+                  "Appointment",
+                  `${date} • ${time}`
+                )}
+
+                ${row(
+                  "Payment",
+                  paymentMethod ===
+                    "online"
+                    ? "Paid online"
+                    : "Pay at salon"
+                )}
+
+                ${row(
+                  "Total",
+                  money(
+                    totalEuro
+                  ),
+                  true
+                )}
+
               </div>
 
               ${
-                aiStyle || haircutBrief
+                aiStyle ||
+                haircutBrief
                   ? `
-                  <div style="margin-top:28px;background:#fff0f3;border-radius:24px;padding:24px;border:1px solid rgba(255,53,93,0.20);">
-                    <div style="font-size:12px;font-weight:900;color:#ff355d;letter-spacing:0.15em;text-transform:uppercase;">
-                      AI Haircut Brief
+                    <div
+                      style="
+                        margin-top:28px;
+                        background:#fff0f3;
+                        border-radius:24px;
+                        padding:24px;
+                        border:1px solid rgba(255,53,93,0.20);
+                      "
+                    >
+
+                      <div
+                        style="
+                          font-size:12px;
+                          font-weight:900;
+                          color:#ff355d;
+                          letter-spacing:0.15em;
+                          text-transform:uppercase;
+                        "
+                      >
+                        AI Haircut Brief
+                      </div>
+
+                      ${
+                        aiStyle
+                          ? `
+                            <div
+                              style="
+                                margin-top:10px;
+                                font-size:22px;
+                                font-weight:900;
+                                color:#111;
+                              "
+                            >
+                              ${aiStyle}
+                            </div>
+                          `
+                          : ""
+                      }
+
+                      ${
+                        haircutBrief
+                          ? `
+                            <p
+                              style="
+                                margin-top:12px;
+                                font-size:15px;
+                                line-height:1.7;
+                                color:#555;
+                              "
+                            >
+                              ${haircutBrief}
+                            </p>
+                          `
+                          : ""
+                      }
+
                     </div>
-                    ${
-                      aiStyle
-                        ? `<div style="margin-top:10px;font-size:22px;font-weight:900;color:#111;">${aiStyle}</div>`
-                        : ""
-                    }
-                    ${
-                      haircutBrief
-                        ? `<p style="margin-top:12px;font-size:15px;line-height:1.7;color:#555;">${haircutBrief}</p>`
-                        : ""
-                    }
-                  </div>`
+                  `
                   : ""
               }
 
-              <div style="margin-top:32px;text-align:center;">
-                <a href="${APP_URL}/portal/barber/bookings"
-                  style="display:inline-block;padding:16px 28px;background:#ff355d;color:white;text-decoration:none;border-radius:999px;font-weight:800;">
+              <div
+                style="
+                  margin-top:32px;
+                  text-align:center;
+                "
+              >
+                <a
+                  href="${APP_URL}/portal/barber/bookings"
+                  style="
+                    display:inline-block;
+                    padding:16px 28px;
+                    background:#ff355d;
+                    color:white;
+                    text-decoration:none;
+                    border-radius:999px;
+                    font-weight:800;
+                  "
+                >
                   Open Barber Bookings
                 </a>
               </div>
+
             </div>
           </div>
         </div>
       `,
     });
-  } catch (err) {
-    console.error("BARBER EMAIL ERROR:", err);
+  } catch (error) {
+    console.error(
+      "BARBER EMAIL ERROR:",
+      error
+    );
+
+    throw error;
   }
 }
 
-type BarberApplicationInput = {
-  name: string;
-  email: string;
-  phone?: string;
-  city?: string;
-  experience?: string;
-  instagram?: string;
-};
+//==================================================
+// BARBER APPLICATION EMAIL
+// Sent to CUTATO admin
+//==================================================
 
 export async function sendBarberApplicationEmail(
   input: BarberApplicationInput
 ) {
   try {
     return await resend.emails.send({
-      from: "Cutato <onboarding@resend.dev>",
-      to: process.env.CUTATO_ADMIN_EMAIL || "your@email.com",
+      from:
+        "Cutato <onboarding@resend.dev>",
 
-      subject: `New Barber Application • ${input.name}`,
+      to:
+        process.env
+          .CUTATO_ADMIN_EMAIL ||
+        "your@email.com",
+
+      subject:
+        `New Barber Application • ${input.name}`,
 
       html: `
-        <div style="font-family:Inter,Arial;padding:40px;background:#f5f5f5;">
-          <div style="max-width:650px;margin:auto;background:white;border-radius:28px;border:1px solid #eee;overflow:hidden;">
+        <div
+          style="
+            font-family:Inter,Arial;
+            padding:40px;
+            background:#f5f5f5;
+          "
+        >
+          <div
+            style="
+              max-width:650px;
+              margin:auto;
+              background:white;
+              border-radius:28px;
+              border:1px solid #eee;
+              overflow:hidden;
+            "
+          >
 
-            <div style="background:#0a0a0a;padding:42px;text-align:center;">
-              <div style="font-size:38px;font-weight:900;color:white;">
+            <div
+              style="
+                background:#0a0a0a;
+                padding:42px;
+                text-align:center;
+              "
+            >
+              <div
+                style="
+                  font-size:38px;
+                  font-weight:900;
+                  color:white;
+                "
+              >
                 CUTATO
               </div>
 
-              <div style="margin-top:10px;color:#ffffff99;">
+              <div
+                style="
+                  margin-top:10px;
+                  color:#ffffff99;
+                "
+              >
                 New barber application
               </div>
             </div>
 
             <div style="padding:40px;">
-              <h1 style="font-size:32px;font-weight:900;color:#111;margin:0;">
+
+              <h1
+                style="
+                  font-size:32px;
+                  font-weight:900;
+                  color:#111;
+                  margin:0;
+                "
+              >
                 Barber Application
               </h1>
 
-              <div style="margin-top:28px;background:#fafafa;padding:24px;border-radius:24px;border:1px solid #eee;">
+              <div
+                style="
+                  margin-top:28px;
+                  background:#fafafa;
+                  padding:24px;
+                  border-radius:24px;
+                  border:1px solid #eee;
+                "
+              >
 
-                ${row("Name", input.name)}
-                ${row("Email", input.email)}
-                ${row("Phone", input.phone || "—")}
-                ${row("City", input.city || "—")}
-                ${row("Experience", input.experience || "—")}
-                ${row("Instagram", input.instagram || "—")}
+                ${row(
+                  "Name",
+                  input.name
+                )}
+
+                ${row(
+                  "Email",
+                  input.email
+                )}
+
+                ${row(
+                  "Phone",
+                  input.phone ||
+                    "—"
+                )}
+
+                ${row(
+                  "City",
+                  input.city ||
+                    "—"
+                )}
+
+                ${row(
+                  "Experience",
+                  input.experience ||
+                    "—"
+                )}
+
+                ${row(
+                  "Instagram",
+                  input.instagram ||
+                    "—"
+                )}
 
               </div>
+
             </div>
           </div>
         </div>
       `,
     });
-  } catch (err) {
-    console.error("BARBER APPLICATION EMAIL ERROR:", err);
+  } catch (error) {
+    console.error(
+      "BARBER APPLICATION EMAIL ERROR:",
+      error
+    );
+
+    throw error;
   }
 }
 
-type SalonApplicationInput = {
-  salonName: string;
-  ownerName: string;
-  email: string;
-  phone?: string;
-  city?: string;
-  address?: string;
-};
+//==================================================
+// SALON APPLICATION EMAIL
+// Sent to CUTATO admin
+//==================================================
 
 export async function sendSalonApplicationEmail(
   input: SalonApplicationInput
 ) {
   try {
     return await resend.emails.send({
-      from: "Cutato <onboarding@resend.dev>",
-      to: process.env.CUTATO_ADMIN_EMAIL || "your@email.com",
+      from:
+        "Cutato <onboarding@resend.dev>",
 
-      subject: `New Salon Application • ${input.salonName}`,
+      to:
+        process.env
+          .CUTATO_ADMIN_EMAIL ||
+        "your@email.com",
+
+      subject:
+        `New Salon Application • ${input.salonName}`,
 
       html: `
-        <div style="font-family:Inter,Arial;padding:40px;background:#f5f5f5;">
-          <div style="max-width:650px;margin:auto;background:white;border-radius:28px;border:1px solid #eee;overflow:hidden;">
+        <div
+          style="
+            font-family:Inter,Arial;
+            padding:40px;
+            background:#f5f5f5;
+          "
+        >
+          <div
+            style="
+              max-width:650px;
+              margin:auto;
+              background:white;
+              border-radius:28px;
+              border:1px solid #eee;
+              overflow:hidden;
+            "
+          >
 
-            <div style="background:#0a0a0a;padding:42px;text-align:center;">
-              <div style="font-size:38px;font-weight:900;color:white;">
+            <div
+              style="
+                background:#0a0a0a;
+                padding:42px;
+                text-align:center;
+              "
+            >
+              <div
+                style="
+                  font-size:38px;
+                  font-weight:900;
+                  color:white;
+                "
+              >
                 CUTATO
               </div>
 
-              <div style="margin-top:10px;color:#ffffff99;">
+              <div
+                style="
+                  margin-top:10px;
+                  color:#ffffff99;
+                "
+              >
                 New salon application
               </div>
             </div>
 
             <div style="padding:40px;">
-              <h1 style="font-size:32px;font-weight:900;color:#111;margin:0;">
+
+              <h1
+                style="
+                  font-size:32px;
+                  font-weight:900;
+                  color:#111;
+                  margin:0;
+                "
+              >
                 Salon Application
               </h1>
 
-              <div style="margin-top:28px;background:#fafafa;padding:24px;border-radius:24px;border:1px solid #eee;">
+              <div
+                style="
+                  margin-top:28px;
+                  background:#fafafa;
+                  padding:24px;
+                  border-radius:24px;
+                  border:1px solid #eee;
+                "
+              >
 
-                ${row("Salon", input.salonName)}
-                ${row("Owner", input.ownerName)}
-                ${row("Email", input.email)}
-                ${row("Phone", input.phone || "—")}
-                ${row("City", input.city || "—")}
-                ${row("Address", input.address || "—")}
+                ${row(
+                  "Salon",
+                  input.salonName
+                )}
+
+                ${row(
+                  "Owner",
+                  input.ownerName
+                )}
+
+                ${row(
+                  "Email",
+                  input.email
+                )}
+
+                ${row(
+                  "Phone",
+                  input.phone ||
+                    "—"
+                )}
+
+                ${row(
+                  "City",
+                  input.city ||
+                    "—"
+                )}
+
+                ${row(
+                  "Address",
+                  input.address ||
+                    "—"
+                )}
 
               </div>
+
             </div>
           </div>
         </div>
       `,
     });
-  } catch (err) {
-    console.error("SALON APPLICATION EMAIL ERROR:", err);
+  } catch (error) {
+    console.error(
+      "SALON APPLICATION EMAIL ERROR:",
+      error
+    );
+
+    throw error;
   }
 }
 
-type ApprovalEmailInput = {
-  to: string;
-  role: "barber" | "salon";
-  temporaryPassword: string;
-};
+//==================================================
+// APPROVAL EMAIL
+//
+// IMPORTANT:
+// Unlike the old version, this DOES NOT silently
+// ignore a Resend error.
+//
+// If Resend rejects the email, the caller receives
+// the error and can tell the admin that delivery
+// failed.
+//==================================================
 
 export async function sendApprovalEmail(
   input: ApprovalEmailInput
 ) {
-  try {
-    const loginUrl =
-      input.role === "salon"
-        ? `${APP_URL}/portal/salon/login`
-        : `${APP_URL}/portal/barber/login`;
+  const loginUrl =
+    input.role === "salon"
+      ? `${APP_URL}/portal/salon/login`
+      : `${APP_URL}/portal/barber/login`;
 
-    return await resend.emails.send({
-      from: "Cutato <onboarding@resend.dev>",
+  const {
+    data,
+    error,
+  } =
+    await resend.emails.send({
+      from:
+        "Cutato <onboarding@resend.dev>",
+
+      // IMPORTANT:
+      // This is the email entered in the
+      // barber/salon application.
       to: input.to,
 
-      subject: `Your Cutato ${input.role} account is approved`,
+      subject:
+        `Your Cutato ${input.role} account is approved`,
 
       html: `
-        <div style="font-family:Inter,Arial;padding:40px;background:#f5f5f5;">
-          <div style="max-width:650px;margin:auto;background:white;border-radius:28px;border:1px solid #eee;overflow:hidden;">
+        <div
+          style="
+            font-family:Inter,Arial;
+            padding:40px;
+            background:#f5f5f5;
+          "
+        >
+          <div
+            style="
+              max-width:650px;
+              margin:auto;
+              background:white;
+              border-radius:28px;
+              border:1px solid #eee;
+              overflow:hidden;
+            "
+          >
 
-            <div style="background:#0a0a0a;padding:44px;text-align:center;">
-              <div style="font-size:40px;font-weight:900;color:white;">
+            <div
+              style="
+                background:#0a0a0a;
+                padding:44px;
+                text-align:center;
+              "
+            >
+              <div
+                style="
+                  font-size:40px;
+                  font-weight:900;
+                  color:white;
+                "
+              >
                 CUTATO
               </div>
 
-              <div style="margin-top:12px;color:#ffffff99;">
+              <div
+                style="
+                  margin-top:12px;
+                  color:#ffffff99;
+                "
+              >
                 Your account has been approved
               </div>
             </div>
 
             <div style="padding:40px;">
-              <h1 style="font-size:34px;font-weight:900;color:#111;margin:0;">
+
+              <h1
+                style="
+                  font-size:34px;
+                  font-weight:900;
+                  color:#111;
+                  margin:0;
+                "
+              >
                 Welcome to Cutato
               </h1>
 
-              <p style="margin-top:18px;font-size:16px;line-height:1.7;color:#555;">
-                Your ${input.role} account has been approved successfully.
+              <p
+                style="
+                  margin-top:18px;
+                  font-size:16px;
+                  line-height:1.7;
+                  color:#555;
+                "
+              >
+                Your ${
+                  input.role
+                } application has been approved successfully.
               </p>
 
-              <div style="margin-top:30px;background:#fafafa;border-radius:24px;padding:24px;border:1px solid #eee;">
-                ${row("Login Email", input.to)}
-                ${row("Temporary Password", input.temporaryPassword)}
+              <p
+                style="
+                  margin-top:10px;
+                  font-size:16px;
+                  line-height:1.7;
+                  color:#555;
+                "
+              >
+                Use the credentials below to sign in to your Cutato ${
+                  input.role
+                } portal.
+              </p>
+
+              <div
+                style="
+                  margin-top:30px;
+                  background:#fafafa;
+                  border-radius:24px;
+                  padding:24px;
+                  border:1px solid #eee;
+                "
+              >
+
+                ${row(
+                  "Login Email",
+                  input.to
+                )}
+
+                ${row(
+                  "Temporary Password",
+                  input.temporaryPassword
+                )}
+
               </div>
 
-              <div style="margin-top:32px;text-align:center;">
+              <div
+                style="
+                  margin-top:32px;
+                  text-align:center;
+                "
+              >
+
                 <a
                   href="${loginUrl}"
                   style="
@@ -349,19 +964,82 @@ export async function sendApprovalEmail(
                     font-weight:800;
                   "
                 >
-                  Open ${input.role} portal
+                  Open ${
+                    input.role ===
+                    "salon"
+                      ? "Salon"
+                      : "Barber"
+                  } Portal
                 </a>
+
               </div>
 
-              <p style="margin-top:28px;font-size:13px;color:#999;text-align:center;">
-                Please change your password after logging in.
-              </p>
+              <div
+                style="
+                  margin-top:30px;
+                  padding:18px;
+                  border-radius:18px;
+                  background:#fff0f3;
+                  color:#555;
+                  font-size:14px;
+                  line-height:1.6;
+                "
+              >
+                This is a temporary password.
+                Please change your password after
+                your first successful login.
+              </div>
+
             </div>
           </div>
         </div>
       `,
     });
-  } catch (err) {
-    console.error("APPROVAL EMAIL ERROR:", err);
+
+  //------------------------------------------------
+  // IMPORTANT:
+  // Resend can return an error object instead of
+  // throwing automatically.
+  //------------------------------------------------
+
+  if (error) {
+    console.error(
+      "APPROVAL EMAIL ERROR:",
+      {
+        recipient:
+          input.to,
+
+        role:
+          input.role,
+
+        error,
+      }
+    );
+
+    throw new Error(
+      `Approval email failed: ${error.message}`
+    );
   }
+
+  //------------------------------------------------
+  // Useful while developing.
+  //
+  // Do NOT log the temporary password.
+  //------------------------------------------------
+
+  console.log(
+    "APPROVAL EMAIL SENT:",
+    {
+      recipient:
+        input.to,
+
+      role:
+        input.role,
+
+      emailId:
+        data?.id,
+    }
+  );
+
+  return data;
 }

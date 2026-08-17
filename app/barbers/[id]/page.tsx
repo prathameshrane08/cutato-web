@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import {
   CalendarDays,
   Clock,
@@ -62,9 +62,43 @@ function calcDynamicPriceEuro(baseEuro: number, demand: "quiet" | "normal" | "bu
   return Math.round(baseEuro * mult * 100) / 100;
 }
 
+function buildBookingHref({
+  barberId,
+  serviceId,
+  date,
+  time,
+  hairstyle,
+  recommendationId,
+}: {
+  barberId: string;
+  serviceId?: string;
+  date?: string;
+  time?: string;
+  hairstyle?: string;
+  recommendationId?: string;
+}) {
+  const searchParams = new URLSearchParams();
+
+  searchParams.set("barberId", barberId);
+
+  if (serviceId) searchParams.set("serviceId", serviceId);
+  if (date) searchParams.set("date", date);
+  if (time) searchParams.set("time", time);
+  if (hairstyle) searchParams.set("hairstyle", hairstyle);
+  if (recommendationId) {
+    searchParams.set("recommendationId", recommendationId);
+  }
+
+  return `/book?${searchParams.toString()}`;
+}
+
 export default function BarberProfilePage() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const barberId = decodeURIComponent(params?.id ?? "");
+
+  const selectedHairstyle = searchParams.get("hairstyle") || "";
+  const recommendationId = searchParams.get("recommendationId") || "";
 
   const [barber, setBarber] = useState<CustomerBarber | null>(null);
   const [loading, setLoading] = useState(true);
@@ -191,12 +225,47 @@ export default function BarberProfilePage() {
           </Link>
 
           <Link
-            href={`/book?barberId=${encodeURIComponent(barber.id)}`}
+            href={buildBookingHref({
+              barberId: barber.id,
+              hairstyle: selectedHairstyle,
+              recommendationId,
+            })}
             className="rounded-full bg-[#ff355d] px-5 py-3 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:bg-[#ff1f4c]"
           >
             Book now
           </Link>
         </div>
+
+        {selectedHairstyle ? (
+          <section className="mb-6 rounded-[30px] border border-[#ff355d]/20 bg-[#ff355d]/5 p-5 shadow-sm md:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#ff355d] text-white">
+                  <Sparkles size={20} />
+                </div>
+
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ff355d]">
+                    Your selected hairstyle
+                  </p>
+                  <h2 className="mt-1 text-2xl font-black text-neutral-950">
+                    {selectedHairstyle}
+                  </h2>
+                  <p className="mt-1 text-sm leading-6 text-neutral-500">
+                    Choose a service or time with {barber.name}. We’ll keep this hairstyle attached to your booking.
+                  </p>
+                </div>
+              </div>
+
+              <Link
+                href="/hairstyle-advisor"
+                className="rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-black text-neutral-950 shadow-sm transition hover:bg-neutral-50"
+              >
+                Change hairstyle
+              </Link>
+            </div>
+          </section>
+        ) : null}
 
         <section className="relative mb-6 overflow-hidden rounded-[36px] bg-neutral-950 p-8 text-white shadow-[0_24px_80px_rgba(0,0,0,0.18)] md:p-12">
           <div className="absolute right-[-120px] top-[-120px] h-80 w-80 rounded-full bg-[#ff355d]/30 blur-3xl" />
@@ -252,7 +321,11 @@ export default function BarberProfilePage() {
               </p>
 
               <Link
-                href={`/book?barberId=${encodeURIComponent(barber.id)}`}
+                href={buildBookingHref({
+                  barberId: barber.id,
+                  hairstyle: selectedHairstyle,
+                  recommendationId,
+                })}
                 className="mt-6 inline-flex w-full justify-center rounded-full bg-[#ff355d] px-6 py-4 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:bg-[#ff1f4c]"
               >
                 Book appointment
@@ -288,6 +361,8 @@ export default function BarberProfilePage() {
                       service={s}
                       barberId={barber.id}
                       currency={salon.currency}
+                      hairstyle={selectedHairstyle}
+                      recommendationId={recommendationId}
                     />
                   ))}
                 </div>
@@ -308,6 +383,8 @@ export default function BarberProfilePage() {
                   slots={todaySlots}
                   basePriceEuro={cheapestService?.basePriceEuro ?? 0}
                   currency={salon.currency}
+                  hairstyle={selectedHairstyle}
+                  recommendationId={recommendationId}
                 />
 
                 <AvailabilityBlock
@@ -317,11 +394,17 @@ export default function BarberProfilePage() {
                   slots={tomorrowSlots}
                   basePriceEuro={cheapestService?.basePriceEuro ?? 0}
                   currency={salon.currency}
+                  hairstyle={selectedHairstyle}
+                  recommendationId={recommendationId}
                 />
               </div>
 
               <Link
-                href={`/book?barberId=${encodeURIComponent(barber.id)}`}
+                href={buildBookingHref({
+                  barberId: barber.id,
+                  hairstyle: selectedHairstyle,
+                  recommendationId,
+                })}
                 className="mt-7 inline-flex w-full justify-center rounded-full bg-[#ff355d] px-6 py-4 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:bg-[#ff1f4c]"
               >
                 Open full booking flow
@@ -371,10 +454,14 @@ function ServiceCard({
   service,
   barberId,
   currency,
+  hairstyle,
+  recommendationId,
 }: {
   service: Service;
   barberId: string;
   currency: string;
+  hairstyle?: string;
+  recommendationId?: string;
 }) {
   return (
     <article className="rounded-[28px] border border-black/10 bg-neutral-50 p-5 transition hover:bg-white hover:shadow-lg">
@@ -404,9 +491,12 @@ function ServiceCard({
           </p>
 
           <Link
-            href={`/book?barberId=${encodeURIComponent(
-              barberId
-            )}&serviceId=${encodeURIComponent(service.id)}`}
+            href={buildBookingHref({
+              barberId,
+              serviceId: service.id,
+              hairstyle,
+              recommendationId,
+            })}
             className="mt-4 inline-flex rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-black shadow-sm transition hover:bg-neutral-50"
           >
             Select
@@ -424,6 +514,8 @@ function AvailabilityBlock({
   slots,
   basePriceEuro,
   currency,
+  hairstyle,
+  recommendationId,
 }: {
   title: string;
   date: string;
@@ -431,6 +523,8 @@ function AvailabilityBlock({
   slots: string[];
   basePriceEuro: number;
   currency: string;
+  hairstyle?: string;
+  recommendationId?: string;
 }) {
   return (
     <div>
@@ -448,9 +542,13 @@ function AvailabilityBlock({
             return (
               <Link
                 key={`${date}_${time}`}
-                href={`/book?barberId=${encodeURIComponent(
-                  barberId
-                )}&date=${encodeURIComponent(date)}&time=${encodeURIComponent(time)}`}
+                href={buildBookingHref({
+                  barberId,
+                  date,
+                  time,
+                  hairstyle,
+                  recommendationId,
+                })}
                 className="rounded-[24px] border border-black/10 bg-neutral-50 p-4 text-inherit no-underline transition hover:-translate-y-0.5 hover:border-[#ff355d]/30 hover:bg-[#ff355d]/5"
               >
                 <div className="text-lg font-black">{time}</div>

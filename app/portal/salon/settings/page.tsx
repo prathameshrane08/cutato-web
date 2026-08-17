@@ -1,332 +1,299 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import WebShell from "@/app/Components/WebShell";
 import { requireSalonAuth } from "@/app/portal/_lib/portalAuth";
-import {
-  readSalonSettings,
-  writeSalonSettings,
-  type SalonSettings,
-} from "@/app/lib/salonSettingsStore";
-import { subscribeStoreUpdates } from "@/app/lib/storeEvents";
+import { createClient } from "@/app/lib/supabase/client";
+
+type SalonForm = {
+  name: string;
+  owner_name: string;
+  email: string;
+  phone: string;
+  city: string;
+  address: string;
+};
+
+const EMPTY_FORM: SalonForm = {
+  name: "",
+  owner_name: "",
+  email: "",
+  phone: "",
+  city: "",
+  address: "",
+};
 
 export default function SalonSettingsPage() {
   const auth = requireSalonAuth();
 
   if (!auth.ok) {
     return (
-      <WebShell title="Access denied" subtitle="You do not have permission to open this page.">
-        <div className="mx-auto max-w-4xl">
-          <div className="theme-card" style={{ padding: 18 }}>
-            <div style={{ fontWeight: 900, fontSize: 18 }}>
-              {auth.reason === "not_logged_in" ? "Please log in" : "Wrong account type"}
-            </div>
-            <div className="theme-muted" style={{ marginTop: 8 }}>
-              This page is only available for salon accounts.
-            </div>
-          </div>
+      <WebShell title="Access denied" subtitle="Salon account required.">
+        <div className="mx-auto max-w-4xl rounded-[28px] border border-black/10 bg-white p-8">
+          This page is only available for salon accounts.
         </div>
       </WebShell>
     );
   }
 
-  const [form, setForm] = useState<SalonSettings | null>(null);
-  const [savedAt, setSavedAt] = useState<string>("");
+  const salonId = auth.user.salonId ?? "";
+  const supabase = createClient();
+
+  const [form, setForm] = useState<SalonForm>(EMPTY_FORM);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState("");
+
+  async function loadSalon() {
+    try {
+      setLoading(true);
+
+      if (!salonId) {
+        setForm(EMPTY_FORM);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("salons")
+        .select("id,name,owner_name,email,phone,city,address,updated_at")
+        .eq("id", salonId)
+        .single();
+
+      if (error) throw error;
+
+      setForm({
+        name: data.name ?? "",
+        owner_name: data.owner_name ?? "",
+        email: data.email ?? "",
+        phone: data.phone ?? "",
+        city: data.city ?? "",
+        address: data.address ?? "",
+      });
+
+      setSavedAt(data.updated_at ?? "");
+    } catch (error) {
+      console.error("Failed to load salon settings:", error);
+      alert("Could not load the current salon profile.");
+      setForm(EMPTY_FORM);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    const load = () => {
-      const current = readSalonSettings();
-      setForm(current);
-      setSavedAt(current.updatedAt ?? "");
-    };
+    void loadSalon();
+  }, [salonId]);
 
-    load();
-
-    const unsub = subscribeStoreUpdates((info) => {
-      if (!info.key || info.key === "cutato_salon_settings_v1") {
-        load();
-      }
-    });
-
-    return unsub;
-  }, []);
-
-  function patch<K extends keyof SalonSettings>(key: K, value: SalonSettings[K]) {
-    if (!form) return;
-    setForm({ ...form, [key]: value });
+  function patch<K extends keyof SalonForm>(key: K, value: SalonForm[K]) {
+    setForm((current) => ({
+      ...current,
+      [key]: value,
+    }));
   }
 
-  function onSave() {
-    if (!form) return;
+  async function save() {
+    if (!salonId) {
+      alert("Your account is not linked to a salon.");
+      return;
+    }
 
-    const clean: SalonSettings = {
-      ...form,
-      salonName: form.salonName.trim(),
-      address: form.address.trim(),
-      phone: form.phone.trim(),
-      email: form.email.trim().toLowerCase(),
-      website: form.website.trim(),
-      currency: form.currency.trim() || "EUR",
-      timezone: form.timezone.trim() || "Europe/Berlin",
-      cancellationPolicy: form.cancellationPolicy.trim(),
-      openingNote: form.openingNote.trim(),
-      logoUrl: form.logoUrl.trim(),
-      coverImageUrl: form.coverImageUrl.trim(),
-    };
+    if (!form.name.trim()) {
+      alert("Salon name is required.");
+      return;
+    }
 
-    writeSalonSettings(clean);
+    try {
+      setSaving(true);
 
-    const updated = readSalonSettings();
-    setForm(updated);
-    setSavedAt(updated.updatedAt ?? "");
+      const updatedAt = new Date().toISOString();
 
-    alert("Salon settings saved.");
-  }
+      const { error } = await supabase
+        .from("salons")
+        .update({
+          name: form.name.trim(),
+          owner_name: form.owner_name.trim() || null,
+          email: form.email.trim().toLowerCase() || null,
+          phone: form.phone.trim() || null,
+          city: form.city.trim() || null,
+          address: form.address.trim() || null,
+          updated_at: updatedAt,
+        })
+        .eq("id", salonId);
 
-  function onResetChanges() {
-    const current = readSalonSettings();
-    setForm(current);
-    setSavedAt(current.updatedAt ?? "");
-  }
+      if (error) throw error;
 
-  if (!form) {
-    return (
-      <WebShell title="Salon Settings" subtitle="Manage your public salon information and policies.">
-        <div className="mx-auto max-w-6xl">
-          <div className="theme-card" style={{ padding: 18 }}>
-            <div style={{ fontWeight: 950 }}>Loading settings…</div>
-          </div>
-        </div>
-      </WebShell>
-    );
+      setSavedAt(updatedAt);
+      alert("Salon settings saved.");
+    } catch (error) {
+      console.error("Failed to save salon settings:", error);
+      alert(
+        error && typeof error === "object" && "message" in error
+          ? String((error as { message: unknown }).message)
+          : "Could not save salon settings."
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
-    <WebShell title="Salon Settings" subtitle="Manage your public salon information and policies.">
-      <div className="mx-auto max-w-6xl" style={{ display: "grid", gap: 14 }}>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Link href="/portal/salon" className="btn btn-secondary">
-            ← Salon dashboard
-          </Link>
-          <Link href="/portal/salon/bookings" className="btn btn-secondary">
-            Bookings
-          </Link>
-          <Link href="/portal/salon/staff" className="btn btn-secondary">
-            Staff
-          </Link>
-          <Link href="/portal/salon/services" className="btn btn-secondary">
-            Services
-          </Link>
-          <Link href="/portal/salon/availability" className="btn btn-secondary">
-            Availability
-          </Link>
-        </div>
+    <WebShell
+      title="Salon Settings"
+      subtitle="These values come from the current salon record in Supabase."
+    >
+      <div className="mx-auto max-w-6xl">
+        <PortalNav />
 
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2 theme-card" style={{ padding: 18 }}>
-            <div style={{ fontWeight: 950, fontSize: 16 }}>Salon profile</div>
-            <div className="theme-muted" style={{ marginTop: 6, fontSize: 13 }}>
-              This information is used across the customer booking flow and confirmation pages.
-            </div>
+        <div className="mt-8 grid gap-6 lg:grid-cols-[1.45fr_0.75fr]">
+          <section className="rounded-[32px] border border-black/10 bg-white p-6 shadow-sm md:p-8">
+            <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">
+              Salon profile
+            </p>
 
-            <div className="divider" style={{ margin: "14px 0" }} />
+            <h1 className="mt-2 text-4xl font-black tracking-[-0.04em]">
+              Public salon information
+            </h1>
 
-            <div
-              style={{
-                display: "grid",
-                gap: 14,
-                gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-              }}
-            >
-              <Field label="Salon name">
-                <input
-                  value={form.salonName}
-                  onChange={(e) => patch("salonName", e.target.value)}
-                  placeholder="Cutato Studio"
-                  style={inputStyle}
-                />
-              </Field>
+            <p className="mt-3 text-sm leading-6 text-neutral-500">
+              No demo values are loaded here. This page reads the salon created
+              when the application was approved.
+            </p>
 
-              <Field label="Phone">
-                <input
-                  value={form.phone}
-                  onChange={(e) => patch("phone", e.target.value)}
-                  placeholder="+49 ..."
-                  style={inputStyle}
-                />
-              </Field>
-
-              <div style={{ gridColumn: "1 / -1" }}>
-                <Field label="Address">
-                  <input
-                    value={form.address}
-                    onChange={(e) => patch("address", e.target.value)}
-                    placeholder="Street, postal code, city"
-                    style={inputStyle}
-                  />
-                </Field>
+            {loading ? (
+              <div className="mt-8 rounded-2xl bg-neutral-50 p-5 font-bold">
+                Loading salon profile...
               </div>
+            ) : (
+              <div className="mt-8 grid gap-5 sm:grid-cols-2">
+                <Field
+                  label="Salon name"
+                  value={form.name}
+                  onChange={(value) => patch("name", value)}
+                />
 
-              <Field label="Email">
-                <input
+                <Field
+                  label="Owner name"
+                  value={form.owner_name}
+                  onChange={(value) => patch("owner_name", value)}
+                />
+
+                <Field
+                  label="Email"
                   value={form.email}
-                  onChange={(e) => patch("email", e.target.value)}
-                  placeholder="hello@cutato.com"
-                  style={inputStyle}
+                  onChange={(value) => patch("email", value)}
                 />
-              </Field>
 
-              <Field label="Website">
-                <input
-                  value={form.website}
-                  onChange={(e) => patch("website", e.target.value)}
-                  placeholder="https://..."
-                  style={inputStyle}
+                <Field
+                  label="Phone"
+                  value={form.phone}
+                  onChange={(value) => patch("phone", value)}
                 />
-              </Field>
 
-              <Field label="Currency">
-                <input
-                  value={form.currency}
-                  onChange={(e) => patch("currency", e.target.value)}
-                  placeholder="EUR"
-                  style={inputStyle}
+                <Field
+                  label="City"
+                  value={form.city}
+                  onChange={(value) => patch("city", value)}
                 />
-              </Field>
 
-              <Field label="Timezone">
-                <input
-                  value={form.timezone}
-                  onChange={(e) => patch("timezone", e.target.value)}
-                  placeholder="Europe/Berlin"
-                  style={inputStyle}
+                <Field
+                  label="Address"
+                  value={form.address}
+                  onChange={(value) => patch("address", value)}
                 />
-              </Field>
-
-              <Field label="Logo URL">
-                <input
-                  value={form.logoUrl}
-                  onChange={(e) => patch("logoUrl", e.target.value)}
-                  placeholder="https://..."
-                  style={inputStyle}
-                />
-              </Field>
-
-              <Field label="Cover image URL">
-                <input
-                  value={form.coverImageUrl}
-                  onChange={(e) => patch("coverImageUrl", e.target.value)}
-                  placeholder="https://..."
-                  style={inputStyle}
-                />
-              </Field>
-
-              <div style={{ gridColumn: "1 / -1" }}>
-                <Field label="Cancellation policy">
-                  <textarea
-                    value={form.cancellationPolicy}
-                    onChange={(e) => patch("cancellationPolicy", e.target.value)}
-                    placeholder="Please cancel at least 12 hours in advance..."
-                    style={{ ...inputStyle, height: 110, paddingTop: 10 }}
-                  />
-                </Field>
               </div>
+            )}
 
-              <div style={{ gridColumn: "1 / -1" }}>
-                <Field label="Customer-facing note">
-                  <textarea
-                    value={form.openingNote}
-                    onChange={(e) => patch("openingNote", e.target.value)}
-                    placeholder="Welcome note, parking info, arrival instructions..."
-                    style={{ ...inputStyle, height: 110, paddingTop: 10 }}
-                  />
-                </Field>
-              </div>
-            </div>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <button
+                type="button"
+                disabled={loading || saving}
+                onClick={() => void save()}
+                className="rounded-full bg-[#ff355d] px-6 py-3 text-sm font-black text-white disabled:opacity-50"
+              >
+                {saving ? "Saving..." : "Save changes"}
+              </button>
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: 10,
-                marginTop: 16,
-                flexWrap: "wrap",
-              }}
-            >
-              <button className="btn btn-secondary" onClick={onResetChanges}>
+              <button
+                type="button"
+                disabled={loading || saving}
+                onClick={() => void loadSalon()}
+                className="rounded-full border border-black/10 bg-white px-6 py-3 text-sm font-black"
+              >
                 Reset changes
               </button>
-              <button className="btn btn-primary" onClick={onSave}>
-                Save settings
-              </button>
             </div>
-          </div>
+          </section>
 
-          <div style={{ display: "grid", gap: 14, height: "fit-content" }}>
-            <div className="theme-card" style={{ padding: 18 }}>
-              <div style={{ fontWeight: 950, fontSize: 16 }}>Preview</div>
-              <div className="theme-muted" style={{ marginTop: 6, fontSize: 13 }}>
-                A quick summary of what customers will see.
-              </div>
+          <aside className="h-fit rounded-[32px] border border-black/10 bg-neutral-950 p-6 text-white shadow-sm">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff355d]">
+              Preview
+            </p>
 
-              <div className="divider" style={{ margin: "14px 0" }} />
+            <h2 className="mt-3 text-3xl font-black">
+              {form.name || "Unnamed salon"}
+            </h2>
 
-              <PreviewRow label="Salon" value={form.salonName || "—"} />
-              <PreviewRow label="Address" value={form.address || "—"} />
-              <PreviewRow label="Phone" value={form.phone || "—"} />
-              <PreviewRow label="Email" value={form.email || "—"} />
-              <PreviewRow label="Website" value={form.website || "—"} />
-              <PreviewRow label="Currency" value={form.currency || "EUR"} />
-              <PreviewRow label="Timezone" value={form.timezone || "Europe/Berlin"} />
-              <PreviewRow label="Logo URL" value={form.logoUrl || "—"} />
-              <PreviewRow label="Cover image URL" value={form.coverImageUrl || "—"} />
+            <div className="mt-6 grid gap-4 text-sm">
+              <Preview label="Owner" value={form.owner_name || "—"} />
+              <Preview label="Address" value={form.address || "—"} />
+              <Preview label="City" value={form.city || "—"} />
+              <Preview label="Phone" value={form.phone || "—"} />
+              <Preview label="Email" value={form.email || "—"} />
             </div>
 
-            <div className="theme-card" style={{ padding: 18 }}>
-              <div style={{ fontWeight: 950, fontSize: 16 }}>Status</div>
-              <div className="divider" style={{ margin: "14px 0" }} />
-              <div className="theme-muted" style={{ fontSize: 13 }}>
-                Last saved:
-              </div>
-              <div style={{ marginTop: 6, fontWeight: 900 }}>
-                {savedAt ? new Date(savedAt).toLocaleString() : "Not saved yet"}
-              </div>
-            </div>
-          </div>
+            <p className="mt-6 border-t border-white/10 pt-5 text-xs text-white/40">
+              {savedAt
+                ? `Last saved ${new Date(savedAt).toLocaleString()}`
+                : "Not saved yet"}
+            </p>
+          </aside>
         </div>
       </div>
     </WebShell>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function PortalNav() {
   return (
-    <div style={{ display: "grid", gap: 8 }}>
-      <div style={{ fontWeight: 900 }}>{label}</div>
-      {children}
+    <div className="flex flex-wrap gap-2">
+      <Link href="/portal/salon" className="btn btn-secondary">← Dashboard</Link>
+      <Link href="/portal/salon/bookings" className="btn btn-secondary">Bookings</Link>
+      <Link href="/portal/salon/staff" className="btn btn-secondary">Staff</Link>
+      <Link href="/portal/salon/services" className="btn btn-secondary">Services</Link>
+      <Link href="/portal/salon/availability" className="btn btn-secondary">Availability</Link>
     </div>
   );
 }
 
-function PreviewRow({ label, value }: { label: string; value: string }) {
+function Field({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
-    <div style={{ display: "grid", gap: 4, marginBottom: 10 }}>
-      <div className="theme-muted" style={{ fontSize: 12, fontWeight: 800 }}>
+    <label className="grid gap-2">
+      <span className="text-sm font-black">{label}</span>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-13 rounded-2xl border border-black/10 bg-neutral-50 px-4 py-3 outline-none focus:border-[#ff355d]/50"
+      />
+    </label>
+  );
+}
+
+function Preview({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs font-black uppercase tracking-wide text-white/35">
         {label}
-      </div>
-      <div style={{ fontWeight: 900, fontSize: 14, lineHeight: 1.4 }}>{value}</div>
+      </p>
+      <p className="mt-1 font-bold text-white/85">{value}</p>
     </div>
   );
 }
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  height: 44,
-  padding: "0 12px",
-  borderRadius: 14,
-  border: "1px solid rgba(0,0,0,0.10)",
-  background: "rgba(0,0,0,0.02)",
-  outline: "none",
-  fontWeight: 800,
-};

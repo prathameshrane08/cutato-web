@@ -1,718 +1,173 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import {
-  CalendarDays,
-  CheckCircle2,
+  ArrowRight,
+  CalendarCheck,
   Clock,
-  CreditCard,
   MapPin,
   Scissors,
+  ShieldCheck,
   Sparkles,
   Star,
+  Users,
   Wallet,
 } from "lucide-react";
-
+import HairstyleAI from "@/app/Components/HairstyleAI";
 import WebShell from "@/app/Components/WebShell";
 import ChatBot from "@/app/Components/ChatBot";
-import { getAuthUser } from "@/app/Components/auth";
-import type { Booking } from "@/app/lib/bookingStore";
 import type { CustomerBarber } from "@/app/lib/barbersStore";
-import { getBarberByIdFromSupabase } from "@/app/lib/barbersSupabase";
-import { getServicesFromSupabase, type Service } from "@/app/lib/servicesStore";
-import { generateSlotsForDateFromSupabase } from "@/app/lib/availabilityStore";
-import { getReservedTimesForBarber } from "@/app/lib/availabilitySupabase";
+import {
+  getBarbersFromSupabase,
+  type SupabaseBarber,
+} from "@/app/lib/barbersSupabase";
+import { generateSlotsForDate } from "@/app/lib/availabilityStore";
 import { readSalonSettings } from "@/app/lib/salonSettingsStore";
 import { fmtMoney } from "@/app/lib/formatters";
-import { subscribeStoreUpdates } from "@/app/lib/storeEvents";
-import { createBookingInSupabase } from "@/app/lib/bookingsSupabase";
-import { getCurrentUser } from "@/app/lib/authSupabase";
-
-type Step = 1 | 2 | 3;
-type PaymentMethod = "online" | "salon";
-type Demand = "quiet" | "normal" | "busy";
+import {
+  getServicesFromSupabase,
+  type Service,
+} from "@/app/lib/servicesStore";
 
 function dayKey(d: Date) {
-  return d.toISOString().slice(0, 10);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
-function addDays(base: Date, n: number) {
-  const d = new Date(base);
-  d.setDate(d.getDate() + n);
-  return d;
-}
-
-function prettyDayLabel(yyyyMmDd: string) {
-  const [y, m, d] = yyyyMmDd.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  return dt.toLocaleDateString(undefined, {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-  });
-}
-
-function demandForTime(time: string): Demand {
+function demandForTime(time: string): "quiet" | "normal" | "busy" {
   const [h] = time.split(":").map(Number);
   if (h >= 17) return "busy";
   if (h < 11) return "quiet";
   return "normal";
 }
 
-function demandLabel(d: Demand) {
-  if (d === "busy") return "Busy";
-  if (d === "quiet") return "Quiet";
-  return "Normal";
-}
-
-function calcDynamicPriceEuro(base: number, demand: Demand) {
+function calcDynamicPriceEuro(
+  base: number,
+  demand: "quiet" | "normal" | "busy"
+) {
   const mult = demand === "busy" ? 1.2 : demand === "quiet" ? 0.85 : 1;
   return Math.round(base * mult * 100) / 100;
 }
 
-function hmToMin(s: string) {
-  const [h, m] = s.split(":").map(Number);
-  return h * 60 + m;
-}
+export default function HomePage() {
+  const [barbers, setBarbers] = useState<CustomerBarber[]>([]);
+  const [tick] = useState(0);
 
-function minToHm(v: number) {
-  const h = Math.floor(v / 60);
-  const m = v % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
+  async function loadBarbers() {
+    try {
+      const rows = await getBarbersFromSupabase();
+      console.log("SUPABASE BARBERS:", rows);
 
-function reservedTimesFromStart(start: string, durationMin: number, stepMin = 30) {
-  const startMin = hmToMin(start);
-  const count = Math.max(1, Math.ceil(durationMin / stepMin));
-  return Array.from({ length: count }, (_, i) => minToHm(startMin + i * stepMin));
-}
+      const mapped: CustomerBarber[] = rows.map((b: SupabaseBarber) => ({
+      id: b.id,
+      name: b.name,
+      area: b.area,
+      address: b.address,
+      distKm: Number(b.dist_km ?? 0),
+      rating: Number(b.rating ?? 0),
+      reviews: Number(b.reviews ?? 0),
 
-function makeLocalBookingId() {
-  return `bk_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
-}
+      tagline: b.tagline ?? undefined,
+      about: b.about ?? undefined,
 
-export default function BookPage() {
-  return (
-    <Suspense fallback={<BookLoading />}>
-      <BookPageInner />
-    </Suspense>
-  );
-}
+      imageUrl: b.image_url ?? undefined,
+      speciality: b.speciality ?? undefined,
 
-function BookPageInner() {
-  const params = useSearchParams();
+      active: b.active ?? true,
+    }));
 
-  const barberId = params.get("barberId") || "";
-  const initialServiceId = params.get("serviceId") || "";
-  const initialDate = params.get("date") || "";
-  const initialTime = params.get("time") || "";
-
-  const [barber, setBarber] = useState<CustomerBarber | null>(null);
-  const [barberLoading, setBarberLoading] = useState(true);
-
-  const [step, setStep] = useState<Step>(1);
-  const [date, setDate] = useState(initialDate || dayKey(new Date()));
-  const [time, setTime] = useState(initialTime || "");
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("online");
-
-  const [cardName, setCardName] = useState("");
-  const [cardNumber, setCardNumber] = useState("");
-  const [cardExpiry, setCardExpiry] = useState("");
-  const [cardCvc, setCardCvc] = useState("");
-
-  const [services, setServices] = useState<Service[]>([]);
-  const [service, setService] = useState<Service | null>(null);
-
-  const [reservedFromDb, setReservedFromDb] = useState<string[]>([]);
-  const [tick, setTick] = useState(0);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+      setBarbers(mapped);
+    } catch (error) {
+      console.error("Failed to load homepage barbers:", error);
+    }
+  }
 
   useEffect(() => {
-    const unsub = subscribeStoreUpdates(() => setTick((v) => v + 1));
-    return unsub;
+    loadBarbers();
   }, []);
 
-  useEffect(() => {
-    async function loadBarber() {
-      try {
-        setBarberLoading(true);
-
-        if (!barberId) {
-          setBarber(null);
-          return;
-        }
-
-        const b = await getBarberByIdFromSupabase(barberId);
-
-        if (!b) {
-          setBarber(null);
-          return;
-        }
-
-        setBarber({
-        id: b.id,
-        name: b.name,
-        area: b.area,
-        address: b.address,
-        distKm: Number(b.dist_km ?? 0),
-        rating: Number(b.rating ?? 0),
-        reviews: Number(b.reviews ?? 0),
-        tagline: b.tagline ?? undefined,
-        about: b.about ?? undefined,
-        imageUrl: b.image_url ?? undefined,
-        speciality: b.speciality ?? undefined,
-        active: b.active ?? true,
-        salonId: (b as any).salon_id,
-      } as any);
-      } catch (err) {
-        console.error("Failed to load booking barber:", err);
-        setBarber(null);
-      } finally {
-        setBarberLoading(false);
-      }
-    }
-
-    loadBarber();
-  }, [barberId]);
-
-  useEffect(() => {
-    async function loadServices() {
-      try {
-        if (!barberId) {
-          setServices([]);
-          return;
-        }
-
-        const all = await getServicesFromSupabase();
-        const filtered = all.filter((s) => s.barberIds.includes(barberId));
-
-        setServices(filtered);
-      } catch (err) {
-        console.error("Failed to load booking services:", err);
-        setServices([]);
-      }
-    }
-
-    loadServices();
-  }, [barberId, tick]);
-
-  useEffect(() => {
-    async function loadReservedTimes() {
-      if (!barberId || !date) {
-        setReservedFromDb([]);
-        return;
-      }
-
-      const taken = await getReservedTimesForBarber(barberId, date);
-      setReservedFromDb(taken);
-    }
-
-    loadReservedTimes();
-  }, [barberId, date, tick]);
-
-  useEffect(() => {
-    if (!services.length) {
-      setService(null);
-      return;
-    }
-
-    if (initialServiceId) {
-      const found = services.find((s) => s.id === initialServiceId) ?? null;
-      if (found) {
-        setService(found);
-        return;
-      }
-    }
-
-    setService((prev) => {
-      if (prev && services.some((s) => s.id === prev.id)) return prev;
-      return services[0] ?? null;
-    });
-  }, [services, initialServiceId]);
-
-  const salon = useMemo(() => readSalonSettings(), [tick]);
-
-  const [slots, setSlots] = useState<string[]>([]);
-
-useEffect(() => {
-  async function loadSlots() {
-    if (!service || !barberId || !date) {
-      setSlots([]);
-      return;
-    }
-
-    const generated = await generateSlotsForDateFromSupabase(
-      barberId,
-      date,
-      service.durationMin
-    );
-
-    const taken = new Set(reservedFromDb);
-
-    const filtered = generated.filter((slot) => !taken.has(slot));
-
-    setSlots(filtered);
-  }
-
-  loadSlots();
-}, [barberId, date, service, reservedFromDb, tick]);
-
-  useEffect(() => {
-    if (!time) return;
-    if (!slots.includes(time)) setTime("");
-  }, [slots, time]);
-
-  useEffect(() => {
-    if (initialTime && slots.includes(initialTime)) setTime(initialTime);
-  }, [initialTime, slots]);
-
+  const salon = useMemo(() => readSalonSettings(), []);
   const today = useMemo(() => dayKey(new Date()), []);
-  const tomorrow = useMemo(() => dayKey(addDays(new Date(), 1)), []);
 
-  const selectedDemand = useMemo<Demand>(
-    () => demandForTime(time || "12:00"),
-    [time]
+  const visibleBarbers = useMemo(
+    () =>
+      barbers
+        .filter((b) => b.active !== false && b.name)
+        .slice()
+        .sort((a, b) => {
+          const ratingDiff = Number(b.rating ?? 0) - Number(a.rating ?? 0);
+          if (ratingDiff !== 0) return ratingDiff;
+          return Number(a.distKm ?? 0) - Number(b.distKm ?? 0);
+        }),
+    [barbers]
   );
 
-  const serviceBasePrice = Number(service?.basePriceEuro || 0);
-
-  const finalServicePrice = useMemo(
-    () => calcDynamicPriceEuro(serviceBasePrice, selectedDemand),
-    [serviceBasePrice, selectedDemand]
-  );
-
-  const reservedTimes = useMemo(
-    () => (service && time ? reservedTimesFromStart(time, service.durationMin, 30) : []),
-    [service, time]
-  );
-
-  const currentUser = getAuthUser();
-
-  function validatePayment() {
-  return true;
-  }
-
-  function goToLogin() {
-    const next = `/book?barberId=${encodeURIComponent(barberId)}${
-      service ? `&serviceId=${encodeURIComponent(service.id)}` : ""
-    }${date ? `&date=${encodeURIComponent(date)}` : ""}${
-      time ? `&time=${encodeURIComponent(time)}` : ""
-    }`;
-
-    window.location.href = `/login?next=${encodeURIComponent(next)}`;
-  }
-
-  async function handleConfirm() {
-    if (!currentUser?.email) {
-      goToLogin();
-      return;
-    }
-
-    if (!barber || !service) {
-      alert("Please select a barber and service.");
-      return;
-    }
-
-    if (!time) {
-      alert("Please select a time slot.");
-      setStep(2);
-      return;
-    }
-
-    if (!slots.includes(time)) {
-      alert("That slot is no longer available. Please choose another time.");
-      setStep(2);
-      return;
-    }
-
-    const paymentCheck = validatePayment();
-    if (paymentCheck !== true) {
-      alert(paymentCheck);
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-
-      const latestReserved = await getReservedTimesForBarber(barber.id, date);
-      const latestTaken = new Set(latestReserved);
-
-      if (reservedTimes.some((t) => latestTaken.has(t))) {
-        alert("That slot was just booked by someone else. Please choose another time.");
-        setReservedFromDb(latestReserved);
-        setTime("");
-        setStep(2);
-        setIsSubmitting(false);
-        return;
-      }
-
-      const { data } = await getCurrentUser();
-      const authUser = data.user;
-
-      if (!authUser?.id || !authUser.email) {
-        setIsSubmitting(false);
-        goToLogin();
-        return;
-      }
-
-      const bookingId = makeLocalBookingId();
-
-      const aiHairRaw = sessionStorage.getItem("cutato_ai_hair_reference");
-      const aiHair = aiHairRaw ? JSON.parse(aiHairRaw) : null;
-
-      const bookingPayload = {
-        id: bookingId,
-        createdAt: new Date().toISOString(),
-
-        barberId: barber.id,
-        barberName: barber.name,
-
-        serviceId: service.id,
-        serviceName: service.name,
-        durationMin: service.durationMin,
-
-        date,
-        time,
-        reservedTimes,
-
-        demand: selectedDemand,
-
-        basePriceEuro: Number(service.basePriceEuro || 0),
-        servicePriceEuro: Number(finalServicePrice || 0),
-        tipEuro: 0,
-        totalEuro: Number(finalServicePrice || 0),
-
-        paymentMethod,
-        userEmail: authUser.email,
-        userId: authUser.id,
-
-        status: "pending",
-
-        assignedBarberId: barber.id,
-
-        salonId: (barber as any).salonId,
-        customerId: authUser.id,
-        paymentStatus: paymentMethod === "online" ? "unpaid" : "pay_at_salon",
-
-
-        referenceImage: aiHair?.image,
-        haircutBrief: aiHair?.barberBrief,
-        aiStyle: aiHair?.style,
-      } as Booking & { userId: string };
-
-      await createBookingInSupabase(bookingPayload);
-
-      sessionStorage.removeItem("cutato_ai_hair_reference");
-
-      if (paymentMethod === "online") {
-  const stripeRes = await fetch("/api/stripe/checkout", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      serviceName: service.name,
-      amountEuro: finalServicePrice,
-      barberName: barber.name,
-      bookingId,
-      customerEmail: authUser.email,
-    }),
-  });
-
-  const stripeData = await stripeRes.json();
-
-  if (!stripeRes.ok || !stripeData.url) {
-    alert(stripeData.error || "Stripe checkout failed.");
-    setIsSubmitting(false);
-    return;
-  }
-
-  window.location.href = stripeData.url;
-  return;
-}
-
-      window.location.href = `/booking-success?bookingId=${encodeURIComponent(bookingId)}`;
-    } catch (err) {
-      setIsSubmitting(false);
-      alert(err instanceof Error ? err.message : "Could not complete booking.");
-    }
-  }
-
-  if (barberLoading) {
-    return (
-      <WebShell title="Book appointment" subtitle="Loading barber...">
-        <div className="mx-auto max-w-3xl rounded-[32px] border border-black/10 bg-white p-8 shadow-sm">
-          <div className="font-black">Loading barber...</div>
-        </div>
-      </WebShell>
-    );
-  }
-
-  if (!barber) {
-    return (
-      <WebShell title="Book appointment" subtitle="Barber not found">
-        <div className="mx-auto max-w-3xl rounded-[32px] border border-black/10 bg-white p-8 shadow-sm">
-          <h2 className="text-2xl font-black">Invalid barber</h2>
-          <p className="mt-2 text-neutral-500">
-            We could not find the barber profile for this booking link.
-          </p>
-          <Link
-            href="/"
-            className="mt-6 inline-flex rounded-full bg-[#ff355d] px-6 py-3 text-sm font-black text-white"
-          >
-            Back to home
-          </Link>
-        </div>
-      </WebShell>
-    );
-  }
+  const featuredBarbers = visibleBarbers.slice(0, 4);
 
   return (
     <>
-      <WebShell title="Book appointment" subtitle={barber.name}>
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-            <BookingStepper step={step} />
+      <WebShell
+        title={salon.salonName || "Cutato"}
+        subtitle="Premium barber booking for customers, barbers and salons."
+      >
+        <main className="mx-auto max-w-7xl px-4 pb-20">
+          <HeroSection
+            barberCount={visibleBarbers.length}
+            currency={salon.currency || "EUR"}
+            timezone={salon.timezone || "Europe/Berlin"}
+          />
 
-            <Link
-              href={`/barbers/${encodeURIComponent(barber.id)}`}
-              className="rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-black shadow-sm transition hover:bg-neutral-50"
-            >
-              View profile
-            </Link>
+          <div className="mt-8">
+            <HairstyleAI />
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
-            <div className="grid gap-6">
-              <BarberHero barber={barber} />
+          <HowItWorks />
 
-              {step === 1 ? (
-                <section className="rounded-[34px] border border-black/10 bg-white p-6 shadow-sm md:p-8">
-                  <SectionTitle
-                    icon={<Scissors />}
-                    title="Choose your service"
-                    subtitle="Select what you want to book today."
-                  />
+          <section id="featured-barbers" className="mt-24">
+            <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+              <SectionHeader
+                eyebrow="Featured professionals"
+                title="Top barbers available today"
+                subtitle="Browse live barber profiles, prices, ratings and available slots."
+              />
 
-                  <div className="mt-6 grid gap-4">
-                    {services.length === 0 ? (
-                      <p className="text-neutral-500">
-                        No services available for this barber yet.
-                      </p>
-                    ) : (
-                      services.map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => setService(s)}
-                          className={`rounded-[26px] border p-5 text-left transition hover:-translate-y-0.5 ${
-                            service?.id === s.id
-                              ? "border-[#ff355d] bg-[#ff355d]/5 shadow-lg shadow-[#ff355d]/10"
-                              : "border-black/10 bg-white hover:bg-neutral-50"
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-4">
-                            <div>
-                              <h3 className="text-lg font-black">{s.name}</h3>
-                              <p className="mt-1 text-sm font-bold text-neutral-500">
-                                {s.durationMin} min • {s.category}
-                              </p>
-                              {s.description ? (
-                                <p className="mt-2 text-sm leading-6 text-neutral-500">
-                                  {s.description}
-                                </p>
-                              ) : null}
-                            </div>
-
-                            <div className="text-right text-xl font-black">
-                              {fmtMoney(s.basePriceEuro, salon.currency)}
-                            </div>
-                          </div>
-                        </button>
-                      ))
-                    )}
-                  </div>
-
-                  <div className="mt-6 flex justify-end">
-                    <button
-                      className="rounded-full bg-[#ff355d] px-6 py-4 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:bg-[#ff1f4c] disabled:opacity-50"
-                      disabled={!service}
-                      onClick={() => setStep(2)}
-                    >
-                      Continue to time
-                    </button>
-                  </div>
-                </section>
-              ) : null}
-
-              {step === 2 ? (
-                <section className="rounded-[34px] border border-black/10 bg-white p-6 shadow-sm md:p-8">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <SectionTitle
-                      icon={<Clock />}
-                      title="Pick your time"
-                      subtitle={
-                        service
-                          ? `${service.name} • ${service.durationMin} min`
-                          : "Choose a service first"
-                      }
-                    />
-
-                    <div className="flex flex-wrap gap-2">
-                      <DateButton
-                        active={date === today}
-                        onClick={() => setDate(today)}
-                        label={`Today • ${prettyDayLabel(today)}`}
-                      />
-                      <DateButton
-                        active={date === tomorrow}
-                        onClick={() => setDate(tomorrow)}
-                        label={`Tomorrow • ${prettyDayLabel(tomorrow)}`}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                    {slots.length === 0 ? (
-                      <p className="col-span-full text-neutral-500">
-                        No slots available for the selected day.
-                      </p>
-                    ) : (
-                      slots.map((t) => {
-                        const d = demandForTime(t);
-
-                        return (
-                          <button
-                            key={t}
-                            type="button"
-                            onClick={() => setTime(t)}
-                            className={`rounded-[22px] border p-4 text-left transition hover:-translate-y-0.5 ${
-                              time === t
-                                ? "border-[#ff355d] bg-[#ff355d] text-white shadow-lg shadow-[#ff355d]/25"
-                                : "border-black/10 bg-neutral-50 hover:bg-white"
-                            }`}
-                          >
-                            <div className="text-lg font-black">{t}</div>
-                            <div
-                              className={`mt-1 text-xs font-black ${
-                                time === t
-                                  ? "text-white/75"
-                                  : d === "busy"
-                                  ? "text-[#ff355d]"
-                                  : d === "quiet"
-                                  ? "text-emerald-600"
-                                  : "text-neutral-400"
-                              }`}
-                            >
-                              {demandLabel(d)}
-                            </div>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  <div className="mt-6 flex justify-between gap-3">
-                    <button
-                      className="rounded-full border border-black/10 bg-white px-6 py-4 text-sm font-black shadow-sm"
-                      onClick={() => setStep(1)}
-                    >
-                      Back
-                    </button>
-
-                    <button
-                      className="rounded-full bg-[#ff355d] px-6 py-4 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 disabled:opacity-50"
-                      disabled={!time}
-                      onClick={() => setStep(3)}
-                    >
-                      Continue to payment
-                    </button>
-                  </div>
-                </section>
-              ) : null}
-
-              {step === 3 ? (
-                <section className="rounded-[34px] border border-black/10 bg-white p-6 shadow-sm md:p-8">
-                  <SectionTitle
-                    icon={<CreditCard />}
-                    title="Payment method"
-                    subtitle="Choose how you want to pay."
-                  />
-
-                  <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                    <PaymentButton
-                      active={paymentMethod === "online"}
-                      icon={<CreditCard />}
-                      title="Pay online"
-                      text="Secure Stripe checkout"
-                      onClick={() => setPaymentMethod("online")}
-                    />
-
-                    <PaymentButton
-                      active={paymentMethod === "salon"}
-                      icon={<Wallet />}
-                      title="Pay at salon"
-                      text="Booking will be pending"
-                      onClick={() => setPaymentMethod("salon")}
-                    />
-                  </div>
-
-                  {paymentMethod === "online" ? (
-                    <div className="mt-6 rounded-[28px] bg-neutral-50 p-5">
-                      <h3 className="font-black">Online payment</h3>
-                      <p className="mt-2 text-sm leading-6 text-neutral-500">
-                        You will be redirected to Stripe Checkout to complete your secure card payment.
-                      </p>
-                    </div>
-                  ) : null}
-
-                  <div className="mt-6 flex justify-between gap-3">
-                    <button
-                      className="rounded-full border border-black/10 bg-white px-6 py-4 text-sm font-black shadow-sm"
-                      onClick={() => setStep(2)}
-                    >
-                      Back
-                    </button>
-
-                    {!currentUser?.email ? (
-                      <button
-                        className="rounded-full bg-[#ff355d] px-6 py-4 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25"
-                        onClick={goToLogin}
-                      >
-                        Login to continue
-                      </button>
-                    ) : (
-                      <button
-                        className="rounded-full bg-[#ff355d] px-6 py-4 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 disabled:opacity-50"
-                        disabled={isSubmitting}
-                        onClick={handleConfirm}
-                      >
-                        {isSubmitting
-                          ? "Processing..."
-                          : paymentMethod === "online"
-                          ? "Continue to Stripe"
-                          : "Confirm booking"}
-                      </button>
-                    )}
-                  </div>
-                </section>
-              ) : null}
+              <Link
+                href="/book"
+                className="rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-bold shadow-sm transition hover:-translate-y-0.5 hover:bg-neutral-50"
+              >
+                Open booking flow
+              </Link>
             </div>
 
-            <BookingSummary
-              barberName={barber.name}
-              serviceName={service?.name ?? "—"}
-              date={prettyDayLabel(date)}
-              time={time || "—"}
-              demand={time ? demandLabel(selectedDemand) : "—"}
-              reserved={reservedTimes.length ? reservedTimes.join(", ") : "—"}
-              payment={paymentMethod === "online" ? "Online" : "At salon"}
-              price={fmtMoney(finalServicePrice, salon.currency)}
-            />
-          </div>
-        </div>
+            {featuredBarbers.length === 0 ? (
+              <div className="rounded-[28px] border border-black/10 bg-white p-8 shadow-sm">
+                <div className="text-xl font-black">No barbers available yet</div>
+                <p className="mt-2 text-sm text-neutral-500">
+                  A salon owner needs to add barbers first.
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                {featuredBarbers.map((barber) => (
+                  <FeaturedBarberCard
+                    key={`${barber.id}_${tick}`}
+                    barber={barber}
+                    today={today}
+                    currency={salon.currency}
+                    tick={tick}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <AudienceSection />
+
+          <FinalCTA />
+        </main>
       </WebShell>
 
       <ChatBot />
@@ -720,231 +175,559 @@ useEffect(() => {
   );
 }
 
-function BookLoading() {
+function HeroSection({
+  barberCount,
+  currency,
+  timezone,
+}: {
+  barberCount: number;
+  currency: string;
+  timezone: string;
+}) {
   return (
-    <WebShell title="Book appointment" subtitle="Loading booking page...">
-      <div className="mx-auto max-w-3xl rounded-[32px] border border-black/10 bg-white p-8 shadow-sm">
-        <div className="font-black">Loading booking page...</div>
-      </div>
-    </WebShell>
-  );
-}
+    <section className="relative overflow-hidden rounded-[44px] bg-neutral-950 px-6 py-10 text-white shadow-[0_28px_90px_rgba(0,0,0,0.22)] md:px-12 md:py-16">
+      <div className="absolute right-[-140px] top-[-140px] h-96 w-96 rounded-full bg-[#ff355d]/35 blur-3xl" />
+      <div className="absolute bottom-[-140px] left-[-140px] h-96 w-96 rounded-full bg-white/10 blur-3xl" />
 
-function BookingStepper({ step }: { step: Step }) {
-  const items = [
-    { id: 1, label: "Service", icon: <Scissors size={16} /> },
-    { id: 2, label: "Time", icon: <Clock size={16} /> },
-    { id: 3, label: "Payment", icon: <CreditCard size={16} /> },
-  ];
-
-  return (
-    <div className="flex flex-wrap gap-2 rounded-full border border-black/10 bg-white p-2 shadow-sm">
-      {items.map((item) => (
-        <div
-          key={item.id}
-          className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-black ${
-            step === item.id ? "bg-[#ff355d] text-white" : "text-neutral-500"
-          }`}
-        >
-          {item.icon}
-          {item.label}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function BarberHero({ barber }: { barber: CustomerBarber }) {
-  return (
-    <section className="relative overflow-hidden rounded-[34px] bg-neutral-950 p-6 text-white shadow-[0_24px_80px_rgba(0,0,0,0.16)] md:p-8">
-      <div className="absolute right-[-80px] top-[-80px] h-56 w-56 rounded-full bg-[#ff355d]/30 blur-3xl" />
-
-      <div className="relative flex flex-wrap items-start justify-between gap-5">
+      <div className="relative grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xs font-black text-white/70">
-            <Sparkles size={15} />
-            Selected barber
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-black text-white/80 backdrop-blur">
+            <Sparkles size={15} className="text-[#ff355d]" />
+            Live slots • Smart pricing • Barber discovery
           </div>
 
-          <h2 className="mt-4 text-4xl font-black tracking-[-0.05em]">
-            {barber.name}
-          </h2>
+          <h1 className="mt-7 max-w-4xl text-5xl font-black leading-[0.92] tracking-[-0.06em] md:text-7xl">
+            Find and book your perfect barber.
+          </h1>
 
-          <div className="mt-3 flex flex-wrap gap-3 text-sm font-bold text-white/60">
-            <span className="flex items-center gap-1">
-              <Star size={15} className="fill-[#ff355d] text-[#ff355d]" />
-              {Number(barber.rating ?? 0).toFixed(1)}
-            </span>
+          <p className="mt-6 max-w-2xl text-lg leading-8 text-white/60">
+            Compare trusted barbers, check live availability, see transparent
+            prices and confirm your next haircut in minutes.
+          </p>
 
-            <span className="flex items-center gap-1">
-              <MapPin size={15} />
-              {Number(barber.distKm ?? 0).toFixed(1)} km
-            </span>
+          <div className="mt-8 rounded-[28px] border border-white/10 bg-white p-2 shadow-2xl">
+            <div className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+              <div className="flex items-center gap-3 rounded-[22px] bg-neutral-50 px-4 py-4 text-neutral-950">
+                <Scissors size={19} className="text-[#ff355d]" />
+                <div>
+                  <p className="text-xs font-bold text-neutral-400">Service</p>
+                  <p className="text-sm font-black">Haircut, beard, styling</p>
+                </div>
+              </div>
 
-            <span>{barber.area}</span>
+              <div className="flex items-center gap-3 rounded-[22px] bg-neutral-50 px-4 py-4 text-neutral-950">
+                <MapPin size={19} className="text-[#ff355d]" />
+                <div>
+                  <p className="text-xs font-bold text-neutral-400">Location</p>
+                  <p className="text-sm font-black">Near you</p>
+                </div>
+              </div>
+
+              <Link
+                href="#featured-barbers"
+                className="inline-flex items-center justify-center gap-2 rounded-[22px] bg-[#ff355d] px-6 py-4 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:bg-[#ff1f4c]"
+              >
+                Search <ArrowRight size={17} />
+              </Link>
+            </div>
           </div>
 
-          {barber.speciality ? (
-            <p className="mt-3 font-bold text-white/70">{barber.speciality}</p>
-          ) : null}
+          <div className="mt-6 flex flex-wrap gap-3">
+  <Link
+    href="/hairstyle-advisor"
+    className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-4 text-sm font-black text-neutral-950 shadow-lg transition hover:-translate-y-0.5 hover:bg-neutral-100"
+  >
+    <Sparkles size={17} className="text-[#ff355d]" />
+    Find my hairstyle
+  </Link>
 
-          {barber.tagline ? (
-            <p className="mt-4 max-w-xl text-white/70">{barber.tagline}</p>
-          ) : null}
+  <Link
+    href="/book-ai"
+    className="rounded-full bg-[#ff355d] px-6 py-4 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:-translate-y-0.5 hover:bg-[#ff1f4c]"
+  >
+    Book with AI
+  </Link>
+
+  <Link
+    href="/portal/barber/apply"
+    className="rounded-full border border-white/15 bg-white/10 px-6 py-4 text-sm font-black text-white backdrop-blur transition hover:bg-white hover:text-neutral-950"
+  >
+    Become a barber
+  </Link>
+
+  <Link
+    href="/portal/salon/apply"
+    className="rounded-full border border-white/15 bg-white/10 px-6 py-4 text-sm font-black text-white backdrop-blur transition hover:bg-white hover:text-neutral-950"
+  >
+    Register salon
+  </Link>
+</div>
+
+<div className="mt-5 flex flex-wrap gap-2">
+  {["Haircut", "Beard trim", "Fade", "Styling", "Premium cut"].map(
+    (item) => (
+      <Link
+        key={item}
+        href="#featured-barbers"
+        className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-black text-white/70 transition hover:bg-white hover:text-neutral-950"
+      >
+        {item}
+      </Link>
+    )
+  )}
+</div>
+
+          <div className="mt-8 grid max-w-xl grid-cols-3 gap-3">
+            <MiniStatDark label="Barbers" value={String(barberCount)} />
+            <MiniStatDark label="Currency" value={currency} />
+            <MiniStatDark label="Timezone" value={timezone.replace("Europe/", "")} />
+          </div>
         </div>
 
-        <div className="rounded-[26px] border border-white/10 bg-white/10 p-5 backdrop-blur">
-          <CheckCircle2 className="text-[#ff355d]" />
-          <p className="mt-3 text-sm font-black">Live availability enabled</p>
+        <div className="relative">
+          <div className="rounded-[38px] border border-white/10 bg-white/10 p-4 backdrop-blur">
+            <div className="rounded-[32px] bg-white p-5 text-neutral-950 shadow-[0_24px_80px_rgba(0,0,0,0.25)]">
+              <div className="mb-5 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-widest text-[#ff355d]">
+                    Live preview
+                  </p>
+                  <h3 className="mt-1 text-2xl font-black">Available today</h3>
+                </div>
+                <div className="rounded-full bg-[#ff355d]/10 p-3 text-[#ff355d]">
+                  <CalendarCheck />
+                </div>
+              </div>
+
+              <div className="grid gap-3">
+                <HeroSlot time="10:30" name="Classic haircut" price="€18.00" quiet />
+                <HeroSlot time="14:00" name="Haircut + beard" price="€28.00" />
+                <HeroSlot time="18:30" name="Premium styling" price="€36.00" busy />
+              </div>
+
+              <div className="mt-5 rounded-[28px] bg-neutral-950 p-5 text-white">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-2xl bg-white/10 p-3 text-[#ff355d]">
+                    <Star className="fill-[#ff355d]" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-white/50">Recommended</p>
+                    <p className="font-black">Top-rated barber near you</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="absolute -bottom-5 -left-5 hidden rounded-3xl border border-black/10 bg-white p-4 text-neutral-950 shadow-xl md:block">
+            <div className="flex items-center gap-2">
+              <Star className="fill-[#ff355d] text-[#ff355d]" size={18} />
+              <span className="font-black">4.9 average rating</span>
+            </div>
+          </div>
         </div>
       </div>
     </section>
   );
 }
 
-function SectionTitle({
-  icon,
-  title,
-  subtitle,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  subtitle: string;
-}) {
+function HowItWorks() {
+  const steps = [
+    {
+      icon: <Scissors size={22} />,
+      title: "Choose service",
+      text: "Pick haircut, beard trim, styling or a combo service.",
+    },
+    {
+      icon: <Users size={22} />,
+      title: "Select barber",
+      text: "Compare ratings, distance, pricing and available professionals.",
+    },
+    {
+      icon: <Clock size={22} />,
+      title: "Pick live slot",
+      text: "Choose from generated availability without double booking.",
+    },
+    {
+      icon: <ShieldCheck size={22} />,
+      title: "Confirm booking",
+      text: "Get a clean summary and confirm instantly.",
+    },
+  ];
+
   return (
-    <div className="flex gap-4">
-      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#ff355d]/10 text-[#ff355d]">
-        {icon}
+    <section className="mt-24">
+      <SectionHeader
+        eyebrow="How it works"
+        title="From search to confirmed appointment"
+        subtitle="A smoother booking journey designed for modern salons."
+      />
+
+      <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+        {steps.map((step, index) => (
+          <div
+            key={step.title}
+            className="group rounded-[28px] border border-black/10 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-xl"
+          >
+            <div className="mb-5 flex items-center justify-between">
+              <div className="rounded-2xl bg-[#ff355d]/10 p-3 text-[#ff355d]">
+                {step.icon}
+              </div>
+              <span className="text-sm font-black text-neutral-300">
+                0{index + 1}
+              </span>
+            </div>
+
+            <h3 className="text-xl font-black">{step.title}</h3>
+            <p className="mt-3 text-sm leading-6 text-neutral-500">{step.text}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function FeaturedBarberCard({
+  
+  barber,
+  today,
+  currency,
+  tick,
+}: {
+  barber: CustomerBarber;
+  today: string;
+  currency: string;
+  tick: number;
+}
+)
+ {
+  const [services, setServices] = useState<Service[]>([]);
+
+useEffect(() => {
+  async function loadServices() {
+    try {
+      const all = await getServicesFromSupabase();
+
+      setServices(
+        all.filter((s) => s.barberIds.includes(barber.id))
+      );
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  loadServices();
+}, [barber.id]);
+
+const cheapest = useMemo(() => {
+    if (!services.length) return null;
+    return services.reduce((a, b) =>
+      Number(a.basePriceEuro) < Number(b.basePriceEuro) ? a : b
+    );
+  }, [services]);
+
+  const previewDuration = cheapest?.durationMin ?? 30;
+
+  const slots = useMemo(
+    () => generateSlotsForDate(barber.id, today, previewDuration),
+    [barber.id, today, previewDuration, tick]
+  );
+
+  const previewSlots = slots.slice(0, 3);
+
+  return (
+    <div className="group overflow-hidden rounded-[34px] border border-black/10 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(0,0,0,0.12)]">
+      <div className="relative h-56 overflow-hidden bg-neutral-900">
+        <img
+          src={
+            barber.imageUrl ||
+            `https://api.dicebear.com/7.x/notionists/svg?seed=${barber.name}`
+          }
+          alt={barber.name}
+          className="h-full w-full object-cover opacity-90 transition duration-500 group-hover:scale-105"
+        />
+
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+
+        <div className="absolute left-4 top-4 rounded-full bg-white/90 px-3 py-2 text-xs font-black text-neutral-900 backdrop-blur">
+          {barber.area}
+        </div>
+
+        <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
+          <div>
+            <h3 className="text-2xl font-black text-white">
+              {barber.name}
+            </h3>
+
+            {barber.speciality ? (
+              <p className="mt-1 text-sm font-bold text-white/70">
+                {barber.speciality}
+              </p>
+            ) : null}
+
+            <div className="mt-2 flex items-center gap-2 text-sm text-white/70">
+              <MapPin size={14} />
+              {Number(barber.distKm ?? 0).toFixed(1)} km away
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-white/90 px-3 py-2 text-sm font-black text-neutral-950 backdrop-blur">
+            ⭐ {Number(barber.rating ?? 0).toFixed(1)}
+          </div>
+        </div>
       </div>
 
-      <div>
-        <h2 className="text-2xl font-black tracking-[-0.03em]">{title}</h2>
-        <p className="mt-1 text-sm text-neutral-500">{subtitle}</p>
+      <div className="p-5">
+        {barber.tagline ? (
+          <p className="line-clamp-2 text-sm font-bold leading-6 text-neutral-600">
+            {barber.tagline}
+          </p>
+        ) : (
+          <p className="text-sm text-neutral-500">
+            Premium barber experience with modern grooming services.
+          </p>
+        )}
+
+        <div className="mt-5 rounded-[24px] bg-neutral-50 p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-neutral-400">
+            Starting from
+          </p>
+
+          <div className="mt-1 text-3xl font-black text-neutral-950">
+            {fmtMoney(cheapest?.basePriceEuro ?? 0, currency)}
+          </div>
+
+          <p className="mt-1 text-sm text-neutral-500">
+            {cheapest
+              ? `${cheapest.name} • ${cheapest.durationMin} min`
+              : "No service available"}
+          </p>
+        </div>
+
+        <div className="mt-5">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wide text-neutral-400">
+            Available today
+          </p>
+
+          {previewSlots.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-black/10 px-4 py-3 text-sm text-neutral-500">
+              No slots available today
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {previewSlots.map((time) => (
+                <Link
+                  key={time}
+                  href={`/book?barberId=${encodeURIComponent(
+                    barber.id
+                  )}&date=${encodeURIComponent(today)}&time=${encodeURIComponent(
+                    time
+                  )}`}
+                  className="rounded-full border border-black/10 bg-neutral-50 px-4 py-2 text-sm font-black transition hover:border-[#ff355d]/30 hover:bg-[#ff355d] hover:text-white"
+                >
+                  {time}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <Link
+            href={`/barbers/${encodeURIComponent(barber.id)}`}
+            className="rounded-full border border-black/10 bg-white px-4 py-3 text-center text-sm font-black transition hover:bg-neutral-50"
+          >
+            View profile
+          </Link>
+
+          <Link
+            href={`/book?barberId=${encodeURIComponent(barber.id)}`}
+            className="rounded-full bg-[#ff355d] px-4 py-3 text-center text-sm font-black text-white shadow-lg shadow-[#ff355d]/20 transition hover:bg-[#ff1f4c]"
+          >
+            Book now
+          </Link>
+        </div>
       </div>
     </div>
   );
 }
 
-function DateButton({
-  active,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-full px-4 py-3 text-sm font-black transition ${
-        active
-          ? "bg-[#ff355d] text-white shadow-lg shadow-[#ff355d]/20"
-          : "border border-black/10 bg-white hover:bg-neutral-50"
-      }`}
-    >
-      <CalendarDays className="mr-2 inline" size={15} />
-      {label}
-    </button>
-  );
-}
+function AudienceSection() {
+  const audiences = [
+    {
+      icon: <Users />,
+      title: "For customers",
+      text: "Book faster with live slots, transparent prices and clean appointment history.",
+      href: "/login",
+      label: "Customer login",
+    },
+    {
+      icon: <Scissors />,
+      title: "For barbers",
+      text: "Manage schedule, bookings, availability and daily appointments.",
+      href: "/portal/barber/login",
+      label: "Barber login",
+    },
+    {
+      icon: <Wallet />,
+      title: "For salon owners",
+      text: "Control staff, services, analytics, salon settings and platform operations.",
+      href: "/portal/salon/login",
+      label: "Salon login",
+    },
+  ];
 
-function PaymentButton({
-  active,
-  icon,
-  title,
-  text,
-  onClick,
-}: {
-  active: boolean;
-  icon: React.ReactNode;
-  title: string;
-  text: string;
-  onClick: () => void;
-}) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-[26px] border p-5 text-left transition hover:-translate-y-0.5 ${
-        active
-          ? "border-[#ff355d] bg-[#ff355d]/5"
-          : "border-black/10 bg-neutral-50 hover:bg-white"
-      }`}
-    >
-      <div className="mb-4 inline-flex rounded-2xl bg-[#ff355d]/10 p-3 text-[#ff355d]">
-        {icon}
+    <section className="mt-24">
+      <SectionHeader
+        eyebrow="Multi-role platform"
+        title="Built for every side of the business"
+        subtitle="Customers book. Barbers manage time. Salon owners control operations."
+      />
+
+      <div className="mt-8 grid gap-5 md:grid-cols-3">
+        {audiences.map((item) => (
+          <div
+            key={item.title}
+            className="rounded-[30px] border border-black/10 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-xl"
+          >
+            <div className="mb-5 inline-flex rounded-2xl bg-[#ff355d]/10 p-3 text-[#ff355d]">
+              {item.icon}
+            </div>
+
+            <h3 className="text-xl font-black">{item.title}</h3>
+            <p className="mt-3 text-sm leading-6 text-neutral-500">{item.text}</p>
+
+            <Link
+              href={item.href}
+              className="mt-6 inline-flex rounded-full border border-black/10 px-5 py-3 text-sm font-black transition hover:bg-neutral-50"
+            >
+              {item.label}
+            </Link>
+          </div>
+        ))}
       </div>
-
-      <h3 className="font-black">{title}</h3>
-      <p className="mt-1 text-sm text-neutral-500">{text}</p>
-    </button>
+    </section>
   );
 }
 
-function BookingSummary({
-  barberName,
-  serviceName,
-  date,
+function FinalCTA() {
+  return (
+    <section className="mt-24 overflow-hidden rounded-[36px] bg-neutral-950 p-8 text-center text-white shadow-[0_24px_80px_rgba(0,0,0,0.18)] md:p-14">
+      <div className="mx-auto max-w-3xl">
+        <p className="text-sm font-black uppercase tracking-[0.25em] text-[#ff355d]">
+          Ready when you are
+        </p>
+
+        <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] md:text-6xl">
+          Your next haircut is one booking away.
+        </h2>
+
+        <p className="mx-auto mt-5 max-w-2xl text-white/60">
+          Explore barbers, compare services, preview live availability and lock
+          your appointment in a few clicks.
+        </p>
+
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <Link
+            href="/hairstyle-advisor"
+            className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-4 text-sm font-black text-neutral-950 transition hover:bg-neutral-100"
+          >
+            <Sparkles size={17} className="text-[#ff355d]" />
+            Find my hairstyle
+          </Link>
+
+          <Link
+            href="#featured-barbers"
+            className="rounded-full bg-[#ff355d] px-6 py-4 text-sm font-black text-white transition hover:bg-[#ff1f4c]"
+          >
+            Explore barbers
+          </Link>
+
+          <Link
+            href="/book"
+            className="rounded-full border border-white/15 bg-white/10 px-6 py-4 text-sm font-black text-white transition hover:bg-white hover:text-neutral-950"
+          >
+            Book now
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function HeroSlot({
   time,
-  demand,
-  reserved,
-  payment,
+  name,
   price,
+  quiet,
+  busy,
 }: {
-  barberName: string;
-  serviceName: string;
-  date: string;
   time: string;
-  demand: string;
-  reserved: string;
-  payment: string;
+  name: string;
   price: string;
+  quiet?: boolean;
+  busy?: boolean;
 }) {
   return (
-    <aside className="h-fit rounded-[34px] border border-black/10 bg-white p-6 shadow-sm lg:sticky lg:top-28">
-      <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">
-        Summary
-      </p>
-
-      <h2 className="mt-3 text-2xl font-black">Your booking</h2>
-
-      <p className="mt-2 text-sm text-neutral-500">
-        Review all details before confirming.
-      </p>
-
-      <div className="my-6 h-px bg-black/10" />
-
-      <div className="grid gap-4">
-        <SummaryRow label="Barber" value={barberName} />
-        <SummaryRow label="Service" value={serviceName} />
-        <SummaryRow label="Date" value={date} />
-        <SummaryRow label="Time" value={time} />
-        <SummaryRow label="Reserved" value={reserved} />
-        <SummaryRow label="Demand" value={demand} />
-        <SummaryRow label="Payment" value={payment} />
+    <div className="flex items-center justify-between rounded-3xl border border-black/10 bg-white p-4">
+      <div>
+        <p className="text-sm font-black">{time}</p>
+        <p className="text-xs text-neutral-500">{name}</p>
       </div>
 
-      <div className="my-6 h-px bg-black/10" />
-
-      <div className="flex items-center justify-between">
-        <span className="font-black">Total</span>
-        <span className="text-3xl font-black text-[#ff355d]">{price}</span>
+      <div className="text-right">
+        <p className="text-sm font-black">{price}</p>
+        <p
+          className={`text-xs font-bold ${
+            busy ? "text-[#ff355d]" : quiet ? "text-emerald-600" : "text-neutral-400"
+          }`}
+        >
+          {busy ? "Busy" : quiet ? "Quiet" : "Normal"}
+        </p>
       </div>
-
-      <div className="mt-6 rounded-[24px] bg-neutral-50 p-4 text-sm leading-6 text-neutral-500">
-        Online payments are completed through secure Stripe Checkout.
-      </div>
-    </aside>
+    </div>
   );
 }
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
+function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between gap-4">
-      <span className="text-sm font-bold text-neutral-500">{label}</span>
-      <span className="max-w-[190px] text-right text-sm font-black">{value}</span>
+    <div className="rounded-3xl border border-black/10 bg-neutral-50 p-4">
+      <p className="text-xs font-bold text-neutral-500">{label}</p>
+      <p className="mt-1 truncate text-sm font-black">{value}</p>
+    </div>
+  );
+}
+
+function MiniStatDark({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/10 p-4 backdrop-blur">
+      <p className="text-xs font-bold text-white/40">{label}</p>
+      <p className="mt-1 truncate text-sm font-black text-white">{value}</p>
+    </div>
+  );
+}
+
+function SectionHeader({
+  eyebrow,
+  title,
+  subtitle,
+}: {
+  eyebrow: string;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <div>
+      <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">
+        {eyebrow}
+      </p>
+      <h2 className="mt-3 max-w-3xl text-4xl font-black tracking-[-0.04em] text-neutral-950 md:text-5xl">
+        {title}
+      </h2>
+      <p className="mt-4 max-w-2xl text-base leading-7 text-neutral-500">
+        {subtitle}
+      </p>
     </div>
   );
 }

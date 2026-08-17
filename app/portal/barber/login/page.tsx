@@ -1,64 +1,220 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { Scissors, Mail, Lock } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/app/lib/supabase/client";
+import {
+  useState,
+} from "react";
+
+import {
+  Scissors,
+  Mail,
+  Lock,
+} from "lucide-react";
+
+import {
+  useRouter,
+} from "next/navigation";
+
+import {
+  createClient,
+} from "@/app/lib/supabase/client";
+
+import {
+  signIn,
+} from "@/app/Components/auth";
 
 import WebShell from "@/app/Components/WebShell";
 
 export default function BarberLoginPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const router = useRouter();
-  const supabase = createClient();
+  const [email, setEmail] =
+    useState("");
 
-const [loading, setLoading] = useState(false);
+  const [
+    password,
+    setPassword,
+  ] = useState("");
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(false);
+
+  const router =
+    useRouter();
+
+  const supabase =
+    createClient();
 
   async function login() {
-  try {
-    setLoading(true);
+    const cleanEmail =
+      email
+        .trim()
+        .toLowerCase();
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    if (
+      !cleanEmail ||
+      !password
+    ) {
+      alert(
+        "Please enter your email and password."
+      );
 
-    if (error) {
-      alert(error.message);
       return;
     }
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    try {
+      setLoading(true);
 
-    if (!user) {
-      alert("Login failed");
-      return;
+      //--------------------------------------------
+      // Supabase login
+      //--------------------------------------------
+
+      const {
+        data: loginData,
+        error: loginError,
+      } =
+        await supabase.auth.signInWithPassword(
+          {
+            email:
+              cleanEmail,
+
+            password,
+          }
+        );
+
+      if (loginError) {
+        throw new Error(
+          loginError.message
+        );
+      }
+
+      const user =
+        loginData.user;
+
+      if (!user) {
+        throw new Error(
+          "Login failed."
+        );
+      }
+
+      //--------------------------------------------
+      // Load CUTATO profile
+      //--------------------------------------------
+
+      const {
+        data: profile,
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .select(
+          `
+          id,
+          email,
+          role,
+          name,
+          barber_id,
+          salon_id
+          `
+        )
+        .eq(
+          "id",
+          user.id
+        )
+        .single();
+
+      if (
+        profileError ||
+        !profile
+      ) {
+        await supabase.auth.signOut();
+
+        throw new Error(
+          "Your Cutato profile could not be found."
+        );
+      }
+
+      //--------------------------------------------
+      // Validate barber role
+      //--------------------------------------------
+
+      if (
+        profile.role !==
+        "barber"
+      ) {
+        await supabase.auth.signOut();
+
+        throw new Error(
+          "This account is not a barber account."
+        );
+      }
+
+      //--------------------------------------------
+      // Barber must be linked
+      //--------------------------------------------
+
+      if (
+        !profile.barber_id
+      ) {
+        await supabase.auth.signOut();
+
+        throw new Error(
+          "Your account is not linked to a barber profile yet."
+        );
+      }
+
+      //--------------------------------------------
+      // Save CUTATO local auth
+      //--------------------------------------------
+
+      signIn({
+        name:
+          profile.name ||
+          cleanEmail.split(
+            "@"
+          )[0],
+
+        email:
+          profile.email ||
+          cleanEmail,
+
+        role:
+          "barber",
+
+        barberId:
+          profile.barber_id,
+
+        salonId:
+          profile.salon_id ||
+          undefined,
+
+        supabaseUserId:
+          user.id,
+      });
+
+      //--------------------------------------------
+      // Dashboard
+      //--------------------------------------------
+
+      router.replace(
+        "/portal/barber"
+      );
+
+      router.refresh();
+    } catch (error) {
+      console.error(
+        "BARBER LOGIN ERROR:",
+        error
+      );
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Login failed."
+      );
+    } finally {
+      setLoading(false);
     }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile || profile.role !== "barber") {
-      await supabase.auth.signOut();
-
-      alert("This account is not a barber account.");
-      return;
-    }
-
-    router.push("/portal/barber");
-  } catch (err: any) {
-    alert(err?.message || "Login failed");
-  } finally {
-    setLoading(false);
   }
-}
 
   return (
     <WebShell
@@ -76,39 +232,81 @@ const [loading, setLoading] = useState(false);
           </h1>
 
           <p className="mt-3 text-sm leading-6 text-neutral-500">
-            Access your barber dashboard and manage appointments.
+            Access your barber
+            dashboard and manage
+            appointments.
           </p>
 
           <div className="mt-8 grid gap-5">
             <div className="flex h-14 items-center gap-3 rounded-2xl border border-black/10 bg-neutral-50 px-5">
-              <Mail size={18} className="text-neutral-400" />
+              <Mail
+                size={18}
+                className="text-neutral-400"
+              />
 
               <input
+                type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(event) =>
+                  setEmail(
+                    event.target.value
+                  )
+                }
+                onKeyDown={(event) => {
+                  if (
+                    event.key ===
+                    "Enter"
+                  ) {
+                    void login();
+                  }
+                }}
+                autoComplete="email"
                 placeholder="Email"
                 className="h-full w-full bg-transparent text-sm font-semibold outline-none"
               />
             </div>
 
             <div className="flex h-14 items-center gap-3 rounded-2xl border border-black/10 bg-neutral-50 px-5">
-              <Lock size={18} className="text-neutral-400" />
+              <Lock
+                size={18}
+                className="text-neutral-400"
+              />
 
               <input
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(event) =>
+                  setPassword(
+                    event.target.value
+                  )
+                }
+                onKeyDown={(event) => {
+                  if (
+                    event.key ===
+                    "Enter"
+                  ) {
+                    void login();
+                  }
+                }}
+                autoComplete="current-password"
                 placeholder="Password"
                 className="h-full w-full bg-transparent text-sm font-semibold outline-none"
               />
             </div>
 
             <button
-              onClick={login}
-              disabled={loading}
-              className="inline-flex h-14 items-center justify-center rounded-full bg-[#ff355d] px-6 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:bg-[#ff1f4c] disabled:opacity-50"
+              type="button"
+              onClick={() =>
+                void login()
+              }
+              disabled={
+                loading
+              }
+              className="inline-flex h-14 items-center justify-center rounded-full bg-[#ff355d] px-6 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:bg-[#ff1f4c] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {loading ? "Logging in..." : "Login"}
+              {loading
+                ? "Logging in..."
+                : "Login"}
             </button>
 
             <Link

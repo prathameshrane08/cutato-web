@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 360" width="300" height="360">
+  <rect width="300" height="360" fill="#f5f5f5"></rect>
+  <path d="M150 60 C205 60 225 110 215 170 C205 250 175 285 150 295 C125 285 95 250 85 170 C75 110 95 60 150 60Z" fill="#f2c7a5" stroke="#111111" stroke-width="6"></path>
+  <path d="M95 135 C105 60 195 60 205 135 C180 110 120 110 95 135Z" fill="#222"></path>
+  <ellipse cx="120" cy="165" rx="7" ry="5" fill="#111"></ellipse>
+  <ellipse cx="180" cy="165" rx="7" ry="5" fill="#111"></ellipse>
+  <path d="M150 175 L145 205 L155 205" fill="none" stroke="#111" stroke-width="4"></path>
+  <path d="M120 235 Q150 252 180 235" fill="none" stroke="#111" stroke-width="4"></path>
+  <text x="150" y="335" text-anchor="middle" font-family="Arial" font-size="24" font-weight="700">DIAMOND</text>
+</svg>

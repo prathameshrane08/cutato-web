@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 360" width="300" height="360">
+  <rect width="300" height="360" fill="#f5f5f5"></rect>
+  <circle cx="150" cy="170" r="90" fill="#f2c7a5" stroke="#111111" stroke-width="6"></circle>
+  <path d="M75 135 C95 55 205 55 225 135 C200 105 100 105 75 135Z" fill="#222"></path>
+  <ellipse cx="120" cy="165" rx="7" ry="5" fill="#111"></ellipse>
+  <ellipse cx="180" cy="165" rx="7" ry="5" fill="#111"></ellipse>
+  <path d="M150 175 L145 205 L155 205" fill="none" stroke="#111" stroke-width="4"></path>
+  <path d="M120 235 Q150 255 180 235" fill="none" stroke="#111" stroke-width="4"></path>
+  <text x="150" y="335" text-anchor="middle" font-family="Arial" font-size="24" font-weight="700">ROUND</text>
+</svg>

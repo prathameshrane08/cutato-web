@@ -7,7 +7,6 @@ import { buildConversationReply } from "./conversationEngine";
 
 import {
   updateConversationState,
-  getConversationState,
   startBookingConversation,
   setConversationWaitingFor,
   isBookingConversationActive,
@@ -36,6 +35,7 @@ export async function runLocalAssistant(
   ) {
     intent = "booking";
   }
+
   console.log("Detected intent:", intent);
 
   const {
@@ -45,17 +45,52 @@ export async function runLocalAssistant(
 
   switch (intent) {
     //--------------------------------------------------
+    // Hairstyle Advisor
+    //--------------------------------------------------
+
+    case "hairstyle_advisor":
+      return {
+        handled: true,
+        text: [
+          "✨ I can help you find a hairstyle that suits you.",
+          "",
+          "Cutato's Hairstyle Advisor looks at things such as:",
+          "",
+          "• face shape",
+          "• hair texture",
+          "• hair thickness",
+          "• current hair length",
+          "• hair condition",
+          "• styling preference",
+          "• facial hair",
+          "",
+          "You can either upload a photo for AI-assisted analysis or answer a few simple questions manually.",
+          "",
+          "How would you like to start?",
+        ].join("\n"),
+      };
+
+    //--------------------------------------------------
     // Booking
     //--------------------------------------------------
 
     case "booking": {
       startBookingConversation(sessionId);
-      console.log("Booking case reached");
-      const entities = extractBookingEntities(
-        message,
-        barbers.map((barber) => barber.name),
-        services.map((service) => service.name)
+
+      console.log(
+        "Booking case reached"
       );
+
+      const entities =
+        extractBookingEntities(
+          message,
+          barbers.map(
+            (barber) => barber.name
+          ),
+          services.map(
+            (service) => service.name
+          )
+        );
 
       const mergedEntities =
         updateConversationState(
@@ -68,58 +103,83 @@ export async function runLocalAssistant(
           mergedEntities
         );
 
-        if (bookingPlan.missing.includes("barber")) {
-          setConversationWaitingFor(
-            sessionId,
-            "barber"
-          );
-        }
-
-        else if (
-          bookingPlan.missing.includes("service")
-        ) {
-          setConversationWaitingFor(
-            sessionId,
-            "service"
-          );
-        }
-
-        else if (
-          bookingPlan.missing.includes("date")
-        ) {
-          setConversationWaitingFor(
-            sessionId,
-            "date"
-          );
-        }
-
-        else if (
-          bookingPlan.missing.includes("time")
-        ) {
-          setConversationWaitingFor(
-            sessionId,
-            "time"
-          );
-        }
-
-        else {
-          completeBookingConversation(
-            sessionId
-          );
-        }
+      if (
+        bookingPlan.missing.includes(
+          "barber"
+        )
+      ) {
+        setConversationWaitingFor(
+          sessionId,
+          "barber"
+        );
+      } else if (
+        bookingPlan.missing.includes(
+          "service"
+        )
+      ) {
+        setConversationWaitingFor(
+          sessionId,
+          "service"
+        );
+      } else if (
+        bookingPlan.missing.includes(
+          "date"
+        )
+      ) {
+        setConversationWaitingFor(
+          sessionId,
+          "date"
+        );
+      } else if (
+        bookingPlan.missing.includes(
+          "time"
+        )
+      ) {
+        setConversationWaitingFor(
+          sessionId,
+          "time"
+        );
+      } else {
+        completeBookingConversation(
+          sessionId
+        );
+      }
 
       const bookingPayload =
         createBookingPayload(
           bookingPlan
         );
 
+      const conversationReply =
+        buildConversationReply(
+          bookingPlan
+        );
+
+      if (!bookingPayload) {
+        return {
+          handled: true,
+          text: conversationReply,
+        };
+      }
+
+      const bookingCommand = `
+BOOKING_PAYLOAD
+barberId=${bookingPayload.barberId}
+barberName=${bookingPayload.barberName}
+serviceId=${bookingPayload.serviceId}
+serviceName=${bookingPayload.serviceName}
+date=${bookingPayload.date}
+time=${bookingPayload.time}
+durationMin=${bookingPayload.durationMin}
+basePriceEuro=${bookingPayload.basePriceEuro}
+END_BOOKING_PAYLOAD
+      `.trim();
+
       return {
         handled: true,
-        text: buildConversationReply(
-          bookingPlan
-        ),
-        bookingPayload:
-          bookingPayload ?? undefined,
+        text:
+          `${conversationReply}\n\n${bookingCommand}`,
+        bookingPayload,
       };
     }
 
@@ -131,7 +191,7 @@ export async function runLocalAssistant(
       return {
         handled: true,
         text:
-          "Hello! 👋 I'm Cutato Assistant. I can help you find barbers, compare services, answer pricing questions, and book your next appointment.",
+          "Hello! 👋 I'm Cutato Assistant. I can help you find barbers, choose a hairstyle, compare services, answer pricing questions, and book your next appointment.",
       };
 
     //--------------------------------------------------
@@ -158,7 +218,9 @@ export async function runLocalAssistant(
       return {
         handled: true,
         text:
-          `We currently offer:\n\n• ${uniqueServices.join("\n• ")}`,
+          `We currently offer:\n\n• ${uniqueServices.join(
+            "\n• "
+          )}`,
       };
     }
 
@@ -177,22 +239,24 @@ export async function runLocalAssistant(
 
       const bestBarber = [
         ...barbers,
-      ].sort((first, second) => {
-        if (
-          second.rating !==
-          first.rating
-        ) {
-          return (
-            second.rating -
+      ].sort(
+        (first, second) => {
+          if (
+            second.rating !==
             first.rating
+          ) {
+            return (
+              second.rating -
+              first.rating
+            );
+          }
+
+          return (
+            second.reviews -
+            first.reviews
           );
         }
-
-        return (
-          second.reviews -
-          first.reviews
-        );
-      })[0];
+      )[0];
 
       return {
         handled: true,
@@ -247,10 +311,11 @@ ${bestBarber.tagline ?? ""}`.trim(),
         message.toLowerCase();
 
       const matchingService =
-        services.find((service) =>
-          normalizedMessage.includes(
-            service.name.toLowerCase()
-          )
+        services.find(
+          (service) =>
+            normalizedMessage.includes(
+              service.name.toLowerCase()
+            )
         );
 
       if (!matchingService) {
@@ -271,6 +336,16 @@ ${bestBarber.tagline ?? ""}`.trim(),
 ${matchingService.description ?? ""}`.trim(),
       };
     }
+
+    //--------------------------------------------------
+    // Image
+    //--------------------------------------------------
+
+    case "image":
+      return {
+        handled: false,
+        text: "",
+      };
 
     //--------------------------------------------------
     // Default

@@ -5,376 +5,290 @@ import { useEffect, useMemo, useState } from "react";
 import WebShell from "@/app/Components/WebShell";
 import { requireSalonAuth } from "@/app/portal/_lib/portalAuth";
 import {
-  readSalonAvailability,
-  writeSalonAvailability,
-  readAllBarberAvailability,
+  emptySalonAvailability,
+  readSalonAvailabilityForSalon,
+  writeSalonAvailabilityForSalon,
   type DayName,
   type DayRule,
   type SalonAvailability,
 } from "@/app/lib/availabilityStore";
-import { useCustomerBarbers } from "@/app/lib/barbersStore";
 
-const DAY_LABEL: Record<DayName, string> = {
-  mon: "Mon",
-  tue: "Tue",
-  wed: "Wed",
-  thu: "Thu",
-  fri: "Fri",
-  sat: "Sat",
-  sun: "Sun",
-};
+const DAYS: { key: DayName; label: string }[] = [
+  { key: "mon", label: "Monday" },
+  { key: "tue", label: "Tuesday" },
+  { key: "wed", label: "Wednesday" },
+  { key: "thu", label: "Thursday" },
+  { key: "fri", label: "Friday" },
+  { key: "sat", label: "Saturday" },
+  { key: "sun", label: "Sunday" },
+];
 
-export default function Page() {
+export default function SalonAvailabilityPage() {
   const auth = requireSalonAuth();
 
   if (!auth.ok) {
-    return <Denied role="salon" reason={auth.reason} />;
+    return (
+      <WebShell title="Access denied" subtitle="Salon account required.">
+        <div className="mx-auto max-w-4xl rounded-[28px] border border-black/10 bg-white p-8">
+          This page is only available for salon accounts.
+        </div>
+      </WebShell>
+    );
   }
 
-  const { byId } = useCustomerBarbers();
-  const [availability, setAvailability] = useState<SalonAvailability | null>(null);
-  const [tick, setTick] = useState(0);
+  const salonId = auth.user.salonId ?? "";
+
+  const [availability, setAvailability] =
+    useState<SalonAvailability | null>(null);
+  const [configured, setConfigured] = useState(false);
 
   useEffect(() => {
-    setAvailability(readSalonAvailability());
-  }, [tick]);
+    if (!salonId) {
+      setAvailability(null);
+      setConfigured(false);
+      return;
+    }
 
-  const barberAvailability = useMemo(() => readAllBarberAvailability(), [tick]);
+    const saved = readSalonAvailabilityForSalon(salonId);
 
-  const barberSummaries = useMemo(() => {
-    return barberAvailability
-      .map((av) => {
-        const barber = byId.get(av.barberId);
-        const openDays = (Object.keys(av.week) as DayName[]).filter((d) => av.week[d].enabled).length;
-        return {
-          barberId: av.barberId,
-          name: barber?.name ?? av.barberId,
-          timeOffCount: av.timeOffDates.length,
-          openDays,
-          updatedAt: av.updatedAt,
-        };
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [barberAvailability, byId]);
+    if (saved) {
+      setAvailability(saved);
+      setConfigured(true);
+    } else {
+      setAvailability(emptySalonAvailability());
+      setConfigured(false);
+    }
+  }, [salonId]);
 
-  function save(next: SalonAvailability) {
-    writeSalonAvailability(next);
-    setAvailability(readSalonAvailability());
-  }
+  const openDays = useMemo(() => {
+    if (!availability) return 0;
+
+    return DAYS.filter(({ key }) => availability.week[key].open).length;
+  }, [availability]);
 
   function patchDay(day: DayName, patch: Partial<DayRule>) {
-    if (!availability) return;
-    save({
-      ...availability,
-      week: {
-        ...availability.week,
-        [day]: {
-          ...availability.week[day],
-          ...patch,
+    setAvailability((current) => {
+      if (!current) return current;
+
+      return {
+        ...current,
+        week: {
+          ...current.week,
+          [day]: {
+            ...current.week[day],
+            ...patch,
+          },
         },
-      },
+      };
     });
   }
 
-  function setSlotStep(slotStepMin: 30) {
-    if (!availability) return;
-    save({
-      ...availability,
-      slotStepMin,
-    });
+  function useTypicalHours() {
+    const next = emptySalonAvailability();
+
+    for (const day of ["mon", "tue", "wed", "thu", "fri"] as DayName[]) {
+      next.week[day] = {
+        open: true,
+        start: "09:00",
+        end: "18:00",
+      };
+    }
+
+    next.week.sat = {
+      open: true,
+      start: "10:00",
+      end: "16:00",
+    };
+
+    setAvailability(next);
+  }
+
+  function save() {
+    if (!salonId || !availability) {
+      alert("Your account is not linked to a salon.");
+      return;
+    }
+
+    writeSalonAvailabilityForSalon(salonId, availability);
+    setAvailability(readSalonAvailabilityForSalon(salonId));
+    setConfigured(true);
+
+    alert("Salon availability saved.");
   }
 
   if (!availability) {
     return (
-      <WebShell title="Availability" subtitle="Salon portal">
-        <div className="mx-auto max-w-6xl">
-          <div className="theme-card" style={{ padding: 18 }}>
-            <div style={{ fontWeight: 950 }}>Loading availability…</div>
-          </div>
+      <WebShell title="Availability" subtitle="Loading salon availability...">
+        <div className="mx-auto max-w-6xl rounded-[28px] border border-black/10 bg-white p-8">
+          Loading...
         </div>
       </WebShell>
     );
   }
 
   return (
-    <WebShell title="Availability" subtitle="Salon portal — manage weekly working hours and slot settings.">
-      <div className="mx-auto max-w-6xl" style={{ display: "grid", gap: 14 }}>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Link href="/portal/salon" className="btn btn-secondary">
-            ← Salon dashboard
-          </Link>
-          <Link href="/portal/salon/calendar" className="btn btn-secondary">
-            Calendar
-          </Link>
-          <Link href="/portal/salon/bookings" className="btn btn-secondary">
-            Bookings
-          </Link>
-          <Link href="/portal/salon/staff" className="btn btn-secondary">
-            Staff
-          </Link>
-          <Link href="/portal/salon/settings" className="btn btn-secondary">
-            Settings
-          </Link>
-        </div>
+    <WebShell
+      title="Availability"
+      subtitle="Weekly opening hours for this salon only."
+    >
+      <div className="mx-auto max-w-6xl">
+        <PortalNav />
 
-        <div
-          style={{
-            display: "grid",
-            gap: 12,
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          }}
-        >
-          <StatCard
-            label="Slot step"
-            value={`${availability.slotStepMin} min`}
-            sub="Used in customer booking slot generation"
-          />
-          <StatCard
-            label="Open days"
-            value={`${(Object.keys(availability.week) as DayName[]).filter((d) => availability.week[d].open).length}`}
-            sub="Weekly salon opening days"
-          />
-          <StatCard
-            label="Barber overrides"
-            value={`${barberAvailability.length}`}
-            sub="Barbers with personal availability settings"
-          />
+        {!configured ? (
+          <div className="mt-8 rounded-[30px] border border-[#ff355d]/20 bg-[#ff355d]/5 p-6">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff355d]">
+              Not configured yet
+            </p>
+            <h2 className="mt-2 text-2xl font-black">
+              This salon has no saved availability.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-600">
+              A newly created salon now starts empty instead of inheriting the
+              old demo schedule. Open the days you want, or use typical hours
+              as a starting point.
+            </p>
+
+            <button
+              type="button"
+              onClick={useTypicalHours}
+              className="mt-5 rounded-full bg-neutral-950 px-5 py-3 text-sm font-black text-white"
+            >
+              Use typical hours
+            </button>
+          </div>
+        ) : null}
+
+        <div className="mt-6 grid gap-4 sm:grid-cols-3">
+          <StatCard label="Slot step" value="30 min" />
+          <StatCard label="Open days" value={String(openDays)} />
           <StatCard
             label="Last saved"
-            value={new Date(availability.updatedAt ?? Date.now()).toLocaleDateString()}
-            sub="Salon availability last update"
+            value={
+              availability.updatedAt
+                ? new Date(availability.updatedAt).toLocaleDateString()
+                : "Not yet"
+            }
           />
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2 theme-card" style={{ padding: 18 }}>
-            <div style={{ fontWeight: 950, fontSize: 16 }}>Weekly salon hours</div>
-            <div className="theme-muted" style={{ marginTop: 6, fontSize: 13 }}>
-              These hours define when the salon is open. Final customer slots are generated from
-              the overlap of salon hours and each barber’s own availability.
-            </div>
+        <section className="mt-6 rounded-[32px] border border-black/10 bg-white p-6 shadow-sm md:p-8">
+          <div>
+            <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">
+              Weekly hours
+            </p>
+            <h1 className="mt-2 text-4xl font-black tracking-[-0.04em]">
+              When is your salon open?
+            </h1>
+          </div>
 
-            <div className="divider" style={{ margin: "14px 0" }} />
+          <div className="mt-8 grid gap-3">
+            {DAYS.map(({ key, label }) => {
+              const rule = availability.week[key];
 
-            <div style={{ display: "grid", gap: 10 }}>
-              {(Object.keys(DAY_LABEL) as DayName[]).map((day) => {
-                const rule = availability.week[day];
+              return (
+                <div
+                  key={key}
+                  className="grid gap-4 rounded-[24px] border border-black/10 bg-neutral-50 p-5 md:grid-cols-[180px_1fr_1fr] md:items-center"
+                >
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={rule.open}
+                      onChange={(e) =>
+                        patchDay(key, {
+                          open: e.target.checked,
+                        })
+                      }
+                    />
 
-                return (
-                  <div
-                    key={day}
-                    style={{
-                      padding: 14,
-                      borderRadius: 18,
-                      border: "1px solid rgba(0,0,0,0.08)",
-                      background: "rgba(0,0,0,0.02)",
-                      display: "grid",
-                      gap: 10,
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                      <div style={{ fontWeight: 950, fontSize: 16 }}>
-                        {DAY_LABEL[day]}
-                        <span className="theme-muted" style={{ marginLeft: 10, fontWeight: 900, fontSize: 12 }}>
-                          {rule.open ? "OPEN" : "CLOSED"}
-                        </span>
-                      </div>
-
-                      <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-                        <input
-                          type="checkbox"
-                          checked={rule.open}
-                          onChange={(e) => patchDay(day, { open: e.target.checked })}
-                          style={{ width: 16, height: 16 }}
-                        />
-                        <span className="theme-muted" style={{ fontWeight: 900 }}>
-                          Open
-                        </span>
-                      </label>
-                    </div>
-
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                        gap: 12,
-                      }}
-                    >
-                      <Field label="Start">
-                        <input
-                          className="input"
-                          type="time"
-                          value={rule.start}
-                          disabled={!rule.open}
-                          onChange={(e) => patchDay(day, { start: e.target.value })}
-                          style={inputStyle}
-                        />
-                      </Field>
-
-                      <Field label="End">
-                        <input
-                          className="input"
-                          type="time"
-                          value={rule.end}
-                          disabled={!rule.open}
-                          onChange={(e) => patchDay(day, { end: e.target.value })}
-                          style={inputStyle}
-                        />
-                      </Field>
+                    <div>
+                      <p className="font-black">{label}</p>
+                      <p className="text-xs font-bold uppercase tracking-wide text-neutral-400">
+                        {rule.open ? "Open" : "Closed"}
+                      </p>
                     </div>
                   </div>
-                );
-              })}
-            </div>
+
+                  <label className="grid gap-1">
+                    <span className="text-xs font-black uppercase text-neutral-400">
+                      Start
+                    </span>
+                    <input
+                      type="time"
+                      disabled={!rule.open}
+                      value={rule.start}
+                      onChange={(e) =>
+                        patchDay(key, {
+                          start: e.target.value,
+                        })
+                      }
+                      className="h-12 rounded-2xl border border-black/10 bg-white px-4 disabled:opacity-40"
+                    />
+                  </label>
+
+                  <label className="grid gap-1">
+                    <span className="text-xs font-black uppercase text-neutral-400">
+                      End
+                    </span>
+                    <input
+                      type="time"
+                      disabled={!rule.open}
+                      value={rule.end}
+                      onChange={(e) =>
+                        patchDay(key, {
+                          end: e.target.value,
+                        })
+                      }
+                      className="h-12 rounded-2xl border border-black/10 bg-white px-4 disabled:opacity-40"
+                    />
+                  </label>
+                </div>
+              );
+            })}
           </div>
 
-          <div style={{ display: "grid", gap: 14, height: "fit-content" }}>
-            <div className="theme-card" style={{ padding: 18 }}>
-              <div style={{ fontWeight: 950, fontSize: 16 }}>Slot settings</div>
-              <div className="theme-muted" style={{ marginTop: 6, fontSize: 13 }}>
-                Choose the step used to generate booking start times.
-              </div>
+          <div className="mt-7 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={save}
+              className="rounded-full bg-[#ff355d] px-6 py-3 text-sm font-black text-white"
+            >
+              Save availability
+            </button>
 
-              <div className="divider" style={{ margin: "14px 0" }} />
-
-              <div style={{ display: "grid", gap: 10 }}>
-                {[15, 30].map((step) => (
-                  <button
-                    key={step}
-                    onClick={() => setSlotStep(step as 30)}
-                    style={{
-                      textAlign: "left",
-                      padding: 14,
-                      borderRadius: 16,
-                      border:
-                        availability.slotStepMin === step
-                          ? "1px solid rgba(0,0,0,0.18)"
-                          : "1px solid rgba(0,0,0,0.08)",
-                      background:
-                        availability.slotStepMin === step
-                          ? "rgba(0,0,0,0.05)"
-                          : "rgba(0,0,0,0.02)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <div style={{ fontWeight: 900 }}>{step} minutes</div>
-                    <div className="theme-muted" style={{ marginTop: 4, fontSize: 12 }}>
-                      {step === 15
-                        ? "More granular booking starts"
-                        : "Cleaner and simpler slot grid"}
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-              <div className="divider" style={{ margin: "14px 0" }} />
-
-              <div className="theme-muted" style={{ fontSize: 12 }}>
-                Saved: <b>{new Date(availability.updatedAt ?? Date.now()).toLocaleString()}</b>
-              </div>
-            </div>
-
-            <div className="theme-card" style={{ padding: 18 }}>
-              <div style={{ fontWeight: 950, fontSize: 16 }}>Barber availability summary</div>
-              <div className="theme-muted" style={{ marginTop: 6, fontSize: 13 }}>
-                Each barber can still set personal working hours, breaks, and time off.
-              </div>
-
-              <div className="divider" style={{ margin: "14px 0" }} />
-
-              {barberSummaries.length === 0 ? (
-                <div className="theme-muted" style={{ fontSize: 13 }}>
-                  No barber-specific availability saved yet.
-                </div>
-              ) : (
-                <div style={{ display: "grid", gap: 10 }}>
-                  {barberSummaries.map((b) => (
-                    <div
-                      key={b.barberId}
-                      style={{
-                        padding: 12,
-                        borderRadius: 16,
-                        border: "1px solid rgba(0,0,0,0.08)",
-                        background: "rgba(0,0,0,0.02)",
-                      }}
-                    >
-                      <div style={{ fontWeight: 900 }}>{b.name}</div>
-                      <div className="theme-muted" style={{ marginTop: 4, fontSize: 12 }}>
-                        ID: {b.barberId}
-                      </div>
-                      <div className="theme-muted" style={{ marginTop: 4, fontSize: 12 }}>
-                        Open days: {b.openDays} • Time off dates: {b.timeOffCount}
-                      </div>
-                      <div className="theme-muted" style={{ marginTop: 4, fontSize: 12 }}>
-                        Updated: {b.updatedAt ? new Date(b.updatedAt).toLocaleString() : "—"}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={() => setAvailability(emptySalonAvailability())}
+              className="rounded-full border border-black/10 bg-white px-6 py-3 text-sm font-black"
+            >
+              Close all days
+            </button>
           </div>
-        </div>
+        </section>
       </div>
     </WebShell>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function PortalNav() {
   return (
-    <div style={{ display: "grid", gap: 6 }}>
-      <div style={{ fontWeight: 900, fontSize: 12, opacity: 0.8 }}>{label}</div>
-      {children}
+    <div className="flex flex-wrap gap-2">
+      <Link href="/portal/salon" className="btn btn-secondary">← Dashboard</Link>
+      <Link href="/portal/salon/bookings" className="btn btn-secondary">Bookings</Link>
+      <Link href="/portal/salon/staff" className="btn btn-secondary">Staff</Link>
+      <Link href="/portal/salon/services" className="btn btn-secondary">Services</Link>
+      <Link href="/portal/salon/settings" className="btn btn-secondary">Settings</Link>
     </div>
   );
 }
 
-function StatCard({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-}) {
+function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="theme-card" style={{ padding: 16, borderRadius: 20 }}>
-      <div className="theme-muted" style={{ fontSize: 13, fontWeight: 800 }}>
+    <div className="rounded-[24px] border border-black/10 bg-white p-5">
+      <p className="text-xs font-black uppercase tracking-[0.16em] text-neutral-400">
         {label}
-      </div>
-      <div style={{ marginTop: 8, fontWeight: 950, fontSize: 24 }}>{value}</div>
-      <div className="theme-muted" style={{ marginTop: 8, fontSize: 12 }}>
-        {sub}
-      </div>
+      </p>
+      <p className="mt-2 text-2xl font-black">{value}</p>
     </div>
   );
 }
-
-function Denied({ role, reason }: { role: string; reason: string | null }) {
-  return (
-    <WebShell title="Access denied" subtitle="You do not have permission to open this page.">
-      <div className="mx-auto max-w-4xl">
-        <div className="theme-card" style={{ padding: 18 }}>
-          <div style={{ fontWeight: 900, fontSize: 18 }}>
-            {reason === "not_logged_in" ? "Please log in" : "Wrong account type"}
-          </div>
-          <div className="theme-muted" style={{ marginTop: 8 }}>
-            This page is only available for {role} accounts.
-          </div>
-        </div>
-      </div>
-    </WebShell>
-  );
-}
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  height: 42,
-  padding: "0 12px",
-  borderRadius: 14,
-  border: "1px solid rgba(0,0,0,0.10)",
-  background: "rgba(0,0,0,0.02)",
-  outline: "none",
-  fontWeight: 800,
-};

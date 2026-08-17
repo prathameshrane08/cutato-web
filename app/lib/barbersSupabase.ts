@@ -5,6 +5,7 @@ import { supabase } from "@/app/lib/supabase";
 export type SupabaseBarber = {
   id: string;
   name: string;
+  email?: string | null;
   area: string;
   address: string;
   dist_km: number;
@@ -15,6 +16,7 @@ export type SupabaseBarber = {
   image_url: string | null;
   speciality: string | null;
   active: boolean;
+  salon_id: string | null;
 };
 
 export async function getBarbersFromSupabase(): Promise<SupabaseBarber[]> {
@@ -23,10 +25,22 @@ export async function getBarbersFromSupabase(): Promise<SupabaseBarber[]> {
     .select("*")
     .order("name", { ascending: true });
 
-  if (error) {
-    throw error;
-  }
+  if (error) throw error;
+  return data ?? [];
+}
 
+export async function getBarbersForSalonFromSupabase(
+  salonId: string
+): Promise<SupabaseBarber[]> {
+  if (!salonId) return [];
+
+  const { data, error } = await supabase
+    .from("barbers")
+    .select("*")
+    .eq("salon_id", salonId)
+    .order("name", { ascending: true });
+
+  if (error) throw error;
   return data ?? [];
 }
 
@@ -38,19 +52,28 @@ export async function upsertBarberToSupabase(
     updated_at: new Date().toISOString(),
   };
 
-  const { error } = await supabase.from("barbers").upsert(payload);
+  const { error } = await supabase
+    .from("barbers")
+    .upsert(payload);
 
-  if (error) {
-    throw error;
-  }
+  if (error) throw error;
 }
 
-export async function deleteBarberFromSupabase(id: string): Promise<void> {
-  const { error } = await supabase.from("barbers").delete().eq("id", id);
+export async function deleteBarberFromSupabase(
+  id: string,
+  salonId?: string
+): Promise<void> {
+  let query = supabase
+    .from("barbers")
+    .delete()
+    .eq("id", id);
 
-  if (error) {
-    throw error;
+  if (salonId) {
+    query = query.eq("salon_id", salonId);
   }
+
+  const { error } = await query;
+  if (error) throw error;
 }
 
 export async function getBarberByIdFromSupabase(
@@ -62,10 +85,7 @@ export async function getBarberByIdFromSupabase(
     .eq("id", id)
     .maybeSingle();
 
-  if (error) {
-    throw error;
-  }
-
+  if (error) throw error;
   return data ?? null;
 }
 
@@ -79,9 +99,6 @@ export async function getBestActiveBarberFromSupabase(): Promise<SupabaseBarber 
     .limit(1)
     .maybeSingle();
 
-  if (error) {
-    throw error;
-  }
-
+  if (error) throw error;
   return data ?? null;
 }

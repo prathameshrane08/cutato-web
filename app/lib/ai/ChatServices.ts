@@ -359,8 +359,21 @@ export async function runChatService(
       );
 
     if (localReply.handled) {
-      return textResponse(
-        localReply.text
+      return new Response(
+        JSON.stringify({
+          type: "local",
+          text: localReply.text,
+          bookingPayload:
+            localReply.bookingPayload ?? null,
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type":
+              "application/json; charset=utf-8",
+            "Cache-Control": "no-cache",
+          },
+        }
       );
     }
   }

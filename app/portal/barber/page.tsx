@@ -1,33 +1,53 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
 import WebShell from "@/app/Components/WebShell";
 import { getAuthUser } from "@/app/Components/auth";
+
 import type { CustomerBarber } from "@/app/lib/barbersStore";
 import { getBarberByIdFromSupabase } from "@/app/lib/barbersSupabase";
-import { readSalonSettings } from "@/app/lib/salonSettingsStore";
+
 import type { Booking } from "@/app/lib/bookingStore";
 import { getBookingsForBarber } from "@/app/lib/bookingsSupabase";
-import { fmtMoney, statusLabel, statusPillStyle } from "@/app/lib/formatters";
-import { requireBarberAuth } from "@/app/portal/_lib/portalAuth";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/app/lib/supabase/client";
-function dayKey(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
+
+import {
+  fmtMoney,
+  statusLabel,
+  statusPillStyle,
+} from "@/app/lib/formatters";
+
+import { supabase } from "@/app/lib/supabase";
+import { subscribeToBookings } from "@/app/lib/realtime";
+
+type SalonInfo = {
+  id: string;
+  name: string;
+  address?: string | null;
+  city?: string | null;
+};
+
+function dayKey(date: Date) {
+  return `${date.getFullYear()}-${String(
+    date.getMonth() + 1
+  ).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function addDays(base: Date, n: number) {
-  const d = new Date(base);
-  d.setDate(d.getDate() + n);
-  return d;
+function addDays(base: Date, amount: number) {
+  const date = new Date(base);
+  date.setDate(date.getDate() + amount);
+  return date;
 }
 
 function formatDate(dateStr: string) {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+  const [year, month, day] = dateStr.split("-").map(Number);
+
+  return new Date(
+    year,
+    month - 1,
+    day
+  ).toLocaleDateString(undefined, {
     weekday: "short",
     day: "2-digit",
     month: "short",
@@ -35,477 +55,1051 @@ function formatDate(dateStr: string) {
 }
 
 function shortDay(dateStr: string) {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+  const [year, month, day] = dateStr.split("-").map(Number);
+
+  return new Date(
+    year,
+    month - 1,
+    day
+  ).toLocaleDateString(undefined, {
     weekday: "short",
   });
 }
 
-export default function BarberPortalPage() {
-  const auth = requireBarberAuth();
-
-  const user = getAuthUser();
-  const barberId = user?.barberId ?? "";
-
-  const [tick, setTick] = useState(0);
-  const [barber, setBarber] = useState<CustomerBarber | null>(null);
-  const [barberLoading, setBarberLoading] = useState(true);
-  const [allBookings, setAllBookings] = useState<Booking[]>([]);
-  const router = useRouter();
-  const supabase = createClient();
-
-  useEffect(() => {
-  async function protect() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      router.replace("/portal/barber/login");
-      return;
-    }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile || profile.role !== "barber") {
-      await supabase.auth.signOut();
-
-      router.replace("/portal/barber/login");
-    }
+function errorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
   }
 
-  protect();
-}, []);
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error
+  ) {
+    return String(
+      (error as { message?: unknown }).message ?? "Unknown error"
+    );
+  }
 
-  useEffect(() => {
-    async function loadBarber() {
-      try {
-        setBarberLoading(true);
+  return "Unknown error";
+}
 
-        if (!barberId) {
-          setBarber(null);
-          return;
-        }
+export default function BarberPortalPage() {
+  //------------------------------------------------
+  // Stable CUTATO auth
+  //------------------------------------------------
 
-        const b = await getBarberByIdFromSupabase(barberId);
+  const authUser = useMemo(
+    () => getAuthUser(),
+    []
+  );
 
-        if (!b) {
-          setBarber(null);
-          return;
-        }
+  const barberId =
+    authUser?.role === "barber"
+      ? authUser.barberId ?? ""
+      : "";
 
-        setBarber({
-          id: b.id,
-          name: b.name,
-          area: b.area,
-          address: b.address,
-          distKm: Number(b.dist_km ?? 0),
-          rating: Number(b.rating ?? 0),
-          reviews: Number(b.reviews ?? 0),
-          tagline: b.tagline ?? undefined,
-          about: b.about ?? undefined,
-          imageUrl: b.image_url ?? undefined,
-          speciality: b.speciality ?? undefined,
-          active: b.active ?? true,
-        });
-      } catch (err) {
-        console.error("Failed to load barber profile:", err);
-        setBarber(null);
-      } finally {
-        setBarberLoading(false);
-      }
-    }
+  //------------------------------------------------
+  // State
+  //------------------------------------------------
 
-    loadBarber();
-  }, [barberId]);
+  const [barber, setBarber] =
+    useState<CustomerBarber | null>(null);
 
-  useEffect(() => {
-  async function loadBookings() {
-    try {
+  const [salon, setSalon] =
+    useState<SalonInfo | null>(null);
+
+  const [allBookings, setAllBookings] =
+    useState<Booking[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [loadError, setLoadError] =
+    useState("");
+
+  //------------------------------------------------
+  // Load barber + salon + bookings
+  //------------------------------------------------
+
+  const loadDashboard = useCallback(
+    async (showLoader = false) => {
       if (!barberId) {
-        setAllBookings([]);
+        setLoadError(
+          "This barber account is not linked to a barber profile."
+        );
+        setLoading(false);
         return;
       }
 
-      const data = await getBookingsForBarber(barberId);
-      setAllBookings(data);
-    } catch (err) {
-      console.error("Failed to load barber bookings:", err);
-      setAllBookings([]);
-    }
-  }
+      try {
+        if (showLoader) {
+          setLoading(true);
+        }
 
-  loadBookings();
-}, [barberId, tick]);
+        setLoadError("");
 
-  const salon = useMemo(() => readSalonSettings(), [tick]);
-  const today = dayKey(new Date());
+        //------------------------------------------
+        // 1. Barber
+        //------------------------------------------
 
-  const todayBookings = useMemo(
-    () =>
-      allBookings
-        .filter((b) => b.date === today)
-        .sort((a, b) => a.time.localeCompare(b.time)),
-    [allBookings, today]
+        const barberRow =
+          await getBarberByIdFromSupabase(
+            barberId
+          );
+
+        if (!barberRow) {
+          throw new Error(
+            "The barber profile linked to this account does not exist."
+          );
+        }
+
+        const mappedBarber: CustomerBarber = {
+          id: barberRow.id,
+          name: barberRow.name,
+          area: barberRow.area,
+          address: barberRow.address,
+          distKm: Number(
+            barberRow.dist_km ?? 0
+          ),
+          rating: Number(
+            barberRow.rating ?? 0
+          ),
+          reviews: Number(
+            barberRow.reviews ?? 0
+          ),
+          tagline:
+            barberRow.tagline ??
+            undefined,
+          about:
+            barberRow.about ??
+            undefined,
+          imageUrl:
+            barberRow.image_url ??
+            undefined,
+          speciality:
+            barberRow.speciality ??
+            undefined,
+          active:
+            barberRow.active ?? true,
+        };
+
+        setBarber(mappedBarber);
+
+        //------------------------------------------
+        // 2. Real salon linked to this barber
+        //------------------------------------------
+
+        const {
+          data: barberLink,
+          error: barberLinkError,
+        } = await supabase
+          .from("barbers")
+          .select("salon_id")
+          .eq("id", barberId)
+          .maybeSingle();
+
+        if (barberLinkError) {
+          throw new Error(
+            `Barber salon link could not be loaded: ${barberLinkError.message}`
+          );
+        }
+
+        if (barberLink?.salon_id) {
+          const {
+            data: salonRow,
+            error: salonError,
+          } = await supabase
+            .from("salons")
+            .select(
+              "id, name, address, city"
+            )
+            .eq(
+              "id",
+              barberLink.salon_id
+            )
+            .maybeSingle();
+
+          if (salonError) {
+            throw new Error(
+              `Salon could not be loaded: ${salonError.message}`
+            );
+          }
+
+          setSalon(
+            (salonRow as SalonInfo | null) ??
+              null
+          );
+        } else {
+          setSalon(null);
+        }
+
+        //------------------------------------------
+        // 3. This barber's bookings ONLY
+        //------------------------------------------
+
+        const bookings =
+          await getBookingsForBarber(
+            barberId
+          );
+
+        setAllBookings(
+          bookings ?? []
+        );
+      } catch (error) {
+        const message =
+          errorMessage(error);
+
+        console.error(
+          "BARBER DASHBOARD LOAD ERROR:",
+          message
+        );
+
+        setBarber(null);
+        setSalon(null);
+        setAllBookings([]);
+        setLoadError(message);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [barberId]
   );
 
-  const upcomingBookings = useMemo(
-    () =>
-      allBookings
-        .filter((b) => {
-          const s = b.status ?? "pending";
-          return b.date >= today && s !== "completed" && s !== "cancelled" && s !== "no_show";
-        })
-        .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`))
-        .slice(0, 6),
-    [allBookings, today]
-  );
+  //------------------------------------------------
+  // Initial load + realtime refresh
+  //------------------------------------------------
 
-  const completedRevenue = useMemo(
-    () =>
-      allBookings
-        .filter((b) => b.status === "completed")
-        .reduce((sum, b) => sum + Number(b.totalEuro || 0), 0),
-    [allBookings]
-  );
+  useEffect(() => {
+    void loadDashboard(true);
 
-  const todayRevenue = useMemo(
-    () =>
-      todayBookings
-        .filter((b) => {
-          const s = b.status ?? "pending";
-          return s !== "cancelled" && s !== "no_show";
-        })
-        .reduce((sum, b) => sum + Number(b.totalEuro || 0), 0),
-    [todayBookings]
-  );
+    const unsubscribe =
+      subscribeToBookings(() => {
+        void loadDashboard(false);
+      });
 
-  const openCount = useMemo(
-    () =>
-      allBookings.filter((b) => {
-        const s = b.status ?? "pending";
-        return s === "pending" || s === "confirmed";
-      }).length,
-    [allBookings]
-  );
+    return unsubscribe;
+  }, [loadDashboard]);
 
-  const completedCount = useMemo(
-    () => allBookings.filter((b) => b.status === "completed").length,
-    [allBookings]
-  );
+  //------------------------------------------------
+  // Dashboard calculations
+  //------------------------------------------------
 
-  const onlineRevenue = useMemo(
-    () =>
-      allBookings
-        .filter((b) => b.paymentMethod === "online" && b.status !== "cancelled" && b.status !== "no_show")
-        .reduce((sum, b) => sum + Number(b.totalEuro || 0), 0),
-    [allBookings]
-  );
+  const today =
+    dayKey(new Date());
 
-  const salonRevenue = useMemo(
-    () =>
-      allBookings
-        .filter((b) => b.paymentMethod === "salon" && b.status !== "cancelled" && b.status !== "no_show")
-        .reduce((sum, b) => sum + Number(b.totalEuro || 0), 0),
-    [allBookings]
-  );
+  const todayBookings =
+    useMemo(
+      () =>
+        allBookings
+          .filter(
+            (booking) =>
+              booking.date === today
+          )
+          .sort(
+            (first, second) =>
+              first.time.localeCompare(
+                second.time
+              )
+          ),
+      [allBookings, today]
+    );
 
-  const statusBreakdown = useMemo(() => {
-    const counts = {
-      pending: 0,
-      confirmed: 0,
-      completed: 0,
-      cancelled: 0,
-      no_show: 0,
-    };
+  const upcomingBookings =
+    useMemo(
+      () =>
+        allBookings
+          .filter(
+            (booking) => {
+              const status =
+                booking.status ??
+                "pending";
 
-    for (const b of allBookings) {
-      const s = (b.status ?? "pending") as keyof typeof counts;
-      counts[s] += 1;
-    }
+              return (
+                booking.date >=
+                  today &&
+                status !==
+                  "completed" &&
+                status !==
+                  "cancelled" &&
+                status !==
+                  "no_show"
+              );
+            }
+          )
+          .sort(
+            (first, second) =>
+              `${first.date}${first.time}`.localeCompare(
+                `${second.date}${second.time}`
+              )
+          )
+          .slice(0, 6),
+      [allBookings, today]
+    );
 
-    return counts;
-  }, [allBookings]);
+  const completedRevenue =
+    useMemo(
+      () =>
+        allBookings
+          .filter(
+            (booking) =>
+              booking.status ===
+              "completed"
+          )
+          .reduce(
+            (sum, booking) =>
+              sum +
+              (Number(
+                booking.totalEuro
+              ) || 0),
+            0
+          ),
+      [allBookings]
+    );
 
-  const weekData = useMemo(() => {
-    const days = Array.from({ length: 7 }).map((_, i) => {
-      const date = dayKey(addDays(new Date(), i - 6));
-      const bookings = allBookings.filter((b) => b.date === date);
-      const count = bookings.length;
-      const revenue = bookings
-        .filter((b) => {
-          const s = b.status ?? "pending";
-          return s !== "cancelled" && s !== "no_show";
-        })
-        .reduce((sum, b) => sum + Number(b.totalEuro || 0), 0);
+  const todayRevenue =
+    useMemo(
+      () =>
+        todayBookings
+          .filter(
+            (booking) => {
+              const status =
+                booking.status ??
+                "pending";
 
-      return { date, count, revenue };
-    });
+              return (
+                status !==
+                  "cancelled" &&
+                status !==
+                  "no_show"
+              );
+            }
+          )
+          .reduce(
+            (sum, booking) =>
+              sum +
+              (Number(
+                booking.totalEuro
+              ) || 0),
+            0
+          ),
+      [todayBookings]
+    );
 
-    const maxCount = Math.max(1, ...days.map((d) => d.count));
-    return { days, maxCount };
-  }, [allBookings]);
+  const openCount =
+    useMemo(
+      () =>
+        allBookings.filter(
+          (booking) => {
+            const status =
+              booking.status ??
+              "pending";
 
-  if (!auth.ok) {
+            return (
+              status ===
+                "pending" ||
+              status ===
+                "confirmed"
+            );
+          }
+        ).length,
+      [allBookings]
+    );
+
+  const completedCount =
+    useMemo(
+      () =>
+        allBookings.filter(
+          (booking) =>
+            booking.status ===
+            "completed"
+        ).length,
+      [allBookings]
+    );
+
+  const onlineRevenue =
+    useMemo(
+      () =>
+        allBookings
+          .filter(
+            (booking) =>
+              booking.paymentMethod ===
+                "online" &&
+              booking.status !==
+                "cancelled" &&
+              booking.status !==
+                "no_show"
+          )
+          .reduce(
+            (sum, booking) =>
+              sum +
+              (Number(
+                booking.totalEuro
+              ) || 0),
+            0
+          ),
+      [allBookings]
+    );
+
+  const salonRevenue =
+    useMemo(
+      () =>
+        allBookings
+          .filter(
+            (booking) =>
+              booking.paymentMethod ===
+                "salon" &&
+              booking.status !==
+                "cancelled" &&
+              booking.status !==
+                "no_show"
+          )
+          .reduce(
+            (sum, booking) =>
+              sum +
+              (Number(
+                booking.totalEuro
+              ) || 0),
+            0
+          ),
+      [allBookings]
+    );
+
+  const statusBreakdown =
+    useMemo(() => {
+      const counts = {
+        pending: 0,
+        confirmed: 0,
+        completed: 0,
+        cancelled: 0,
+        no_show: 0,
+      };
+
+      for (const booking of allBookings) {
+        const status =
+          (booking.status ??
+            "pending") as keyof typeof counts;
+
+        if (status in counts) {
+          counts[status] += 1;
+        }
+      }
+
+      return counts;
+    }, [allBookings]);
+
+  const weekData =
+    useMemo(() => {
+      const days =
+        Array.from({
+          length: 7,
+        }).map((_, index) => {
+          const date =
+            dayKey(
+              addDays(
+                new Date(),
+                index - 6
+              )
+            );
+
+          const bookings =
+            allBookings.filter(
+              (booking) =>
+                booking.date ===
+                date
+            );
+
+          const count =
+            bookings.length;
+
+          const revenue =
+            bookings
+              .filter(
+                (booking) => {
+                  const status =
+                    booking.status ??
+                    "pending";
+
+                  return (
+                    status !==
+                      "cancelled" &&
+                    status !==
+                      "no_show"
+                  );
+                }
+              )
+              .reduce(
+                (
+                  sum,
+                  booking
+                ) =>
+                  sum +
+                  (Number(
+                    booking.totalEuro
+                  ) || 0),
+                0
+              );
+
+          return {
+            date,
+            count,
+            revenue,
+          };
+        });
+
+      const maxCount =
+        Math.max(
+          1,
+          ...days.map(
+            (day) =>
+              day.count
+          )
+        );
+
+      return {
+        days,
+        maxCount,
+      };
+    }, [allBookings]);
+
+  //------------------------------------------------
+  // Access
+  //------------------------------------------------
+
+  if (
+    !authUser ||
+    authUser.role !== "barber"
+  ) {
     return (
-      <WebShell title="Access denied" subtitle="You do not have permission to open this page.">
+      <WebShell
+        title="Access denied"
+        subtitle="Barber account required."
+      >
         <div className="mx-auto max-w-4xl">
-          <div className="theme-card" style={{ padding: 18 }}>
-            <div style={{ fontWeight: 900, fontSize: 18 }}>
-              {auth.reason === "not_logged_in" ? "Please log in" : "Wrong account type"}
-            </div>
-            <div className="theme-muted" style={{ marginTop: 8 }}>
-              This page is only available for barber accounts.
-            </div>
+          <div className="rounded-[28px] border border-black/10 bg-white p-8 shadow-sm">
+            <h2 className="text-2xl font-black">
+              Barber login required
+            </h2>
+
+            <p className="mt-2 text-neutral-500">
+              Sign in using a barber
+              account to open this
+              portal.
+            </p>
+
+            <Link
+              href="/login"
+              className="mt-5 inline-flex rounded-full bg-[#ff355d] px-6 py-3 text-sm font-black text-white"
+            >
+              Login
+            </Link>
           </div>
         </div>
       </WebShell>
     );
   }
 
-  if (barberLoading) {
+  //------------------------------------------------
+  // Loading
+  //------------------------------------------------
+
+  if (loading) {
     return (
-      <WebShell title="Barber Portal" subtitle="Loading your profile...">
+      <WebShell
+        title="Barber Dashboard"
+        subtitle="Loading your barber profile..."
+      >
         <div className="mx-auto max-w-4xl">
-          <div className="theme-card" style={{ padding: 18 }}>
-            <div style={{ fontWeight: 900 }}>Loading barber profile...</div>
+          <div className="rounded-[28px] border border-black/10 bg-white p-8 shadow-sm">
+            <p className="font-black">
+              Loading dashboard...
+            </p>
           </div>
         </div>
       </WebShell>
     );
   }
+
+  //------------------------------------------------
+  // Error
+  //------------------------------------------------
+
+  if (loadError) {
+    return (
+      <WebShell
+        title="Barber Dashboard"
+        subtitle="We could not load your barber profile."
+      >
+        <div className="mx-auto max-w-4xl">
+          <div className="rounded-[28px] border border-red-200 bg-white p-8 shadow-sm">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-red-600">
+              Dashboard error
+            </p>
+
+            <h2 className="mt-3 text-2xl font-black">
+              Barber data could not
+              be loaded
+            </h2>
+
+            <p className="mt-3 break-words text-sm text-neutral-500">
+              {loadError}
+            </p>
+
+            <button
+              type="button"
+              onClick={() =>
+                void loadDashboard(
+                  true
+                )
+              }
+              className="mt-5 rounded-full bg-neutral-950 px-6 py-3 text-sm font-black text-white"
+            >
+              Try again
+            </button>
+          </div>
+        </div>
+      </WebShell>
+    );
+  }
+
+  //------------------------------------------------
+  // Missing barber
+  //------------------------------------------------
 
   if (!barberId || !barber) {
     return (
-      <WebShell title="Barber Portal" subtitle="Your barber account is not linked to a staff profile yet.">
+      <WebShell
+        title="Barber Dashboard"
+        subtitle="Your barber account is not linked to a staff profile yet."
+      >
         <div className="mx-auto max-w-4xl">
-          <div className="theme-card" style={{ padding: 18 }}>
-            <div style={{ fontWeight: 900, fontSize: 18 }}>Barber profile not linked</div>
-            <div className="theme-muted" style={{ marginTop: 8 }}>
-              Make sure your Supabase barber row has id <b>{barberId || "missing"}</b>.
-            </div>
+          <div className="rounded-[28px] border border-black/10 bg-white p-8 shadow-sm">
+            <h2 className="text-2xl font-black">
+              Barber profile not
+              linked
+            </h2>
+
+            <p className="mt-2 text-neutral-500">
+              Your account needs a
+              valid barber ID before
+              the portal can be used.
+            </p>
           </div>
         </div>
       </WebShell>
     );
   }
 
+  //------------------------------------------------
+  // Dashboard
+  //------------------------------------------------
+
   return (
-    <WebShell title="Barber Dashboard" subtitle={`Welcome back, ${barber.name}.`}>
-      <div className="mx-auto max-w-6xl" style={{ display: "grid", gap: 16 }}>
-        <section
-          style={{
-            borderRadius: 26,
-            padding: 22,
-            border: "1px solid rgba(0,0,0,0.08)",
-            background: "linear-gradient(180deg, rgba(0,0,0,0.03), rgba(0,0,0,0.01))",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+    <WebShell
+      title="Barber Dashboard"
+      subtitle={`Welcome back, ${barber.name}.`}
+    >
+      <div className="mx-auto grid max-w-6xl gap-6">
+        {/* HERO */}
+
+        <section className="relative overflow-hidden rounded-[36px] bg-neutral-950 p-8 text-white shadow-[0_24px_80px_rgba(0,0,0,0.18)]">
+          <div className="absolute right-[-120px] top-[-120px] h-80 w-80 rounded-full bg-[#ff355d]/30 blur-3xl" />
+
+          <div className="relative flex flex-wrap items-start justify-between gap-6">
             <div>
-              <div style={{ fontSize: 28, fontWeight: 950 }}>{barber.name}</div>
-              <div className="theme-muted" style={{ marginTop: 6 }}>
-                ⭐ {Number(barber.rating ?? 0).toFixed(1)} • {barber.reviews ?? 0} reviews •{" "}
-                {Number(barber.distKm ?? 0).toFixed(1)} km • {barber.area}
-              </div>
-              <div className="theme-muted" style={{ marginTop: 6, fontSize: 13 }}>
-                {barber.address}
-              </div>
+              <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">
+                Barber portal
+              </p>
+
+              <h1 className="mt-3 text-4xl font-black tracking-[-0.05em] md:text-5xl">
+                {barber.name}
+              </h1>
+
+              <p className="mt-4 text-sm text-white/60">
+                ⭐{" "}
+                {Number(
+                  barber.rating ?? 0
+                ).toFixed(1)}
+                {" • "}
+                {barber.reviews ?? 0}{" "}
+                reviews
+                {barber.area
+                  ? ` • ${barber.area}`
+                  : ""}
+              </p>
+
+              {barber.address ? (
+                <p className="mt-2 text-sm text-white/40">
+                  {barber.address}
+                </p>
+              ) : null}
+
               {barber.speciality ? (
-                <div style={{ marginTop: 8, fontWeight: 800 }}>{barber.speciality}</div>
+                <p className="mt-4 font-bold text-white/80">
+                  {barber.speciality}
+                </p>
               ) : null}
+
               {barber.tagline ? (
-                <div style={{ marginTop: 8, fontWeight: 800 }}>{barber.tagline}</div>
+                <p className="mt-2 text-sm text-white/60">
+                  {barber.tagline}
+                </p>
               ) : null}
             </div>
 
-            <div style={{ display: "grid", gap: 10, minWidth: 240 }}>
-              <QuickCard label="Salon" value={salon.salonName} sub={salon.address} />
-              <QuickCard label="Barber ID" value={barberId} sub="Login identity" />
+            <div className="grid min-w-[240px] gap-3">
+              <QuickCard
+                label="Salon"
+                value={
+                  salon?.name ??
+                  "Independent barber"
+                }
+                sub={
+                  salon?.address ||
+                  salon?.city ||
+                  "No salon linked"
+                }
+              />
+
+              <QuickCard
+                label="Barber ID"
+                value={barberId}
+                sub="CUTATO staff identity"
+              />
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
-            <Link href="/portal/barber/bookings" className="btn btn-primary">
+          <div className="relative mt-7 flex flex-wrap gap-3">
+            <PortalButton
+              href="/portal/barber/bookings"
+              primary
+            >
               My bookings
-            </Link>
-            <Link href="/portal/barber/schedule" className="btn btn-secondary">
+            </PortalButton>
+
+            <PortalButton href="/portal/barber/schedule">
               Schedule
-            </Link>
-            <Link href="/portal/barber/availability" className="btn btn-secondary">
+            </PortalButton>
+
+            <PortalButton href="/portal/barber/availability">
               Availability
-            </Link>
-            <Link href="/portal/barber/earnings" className="btn btn-secondary">
+            </PortalButton>
+
+            <PortalButton href="/portal/barber/earnings">
               Earnings
-            </Link>
+            </PortalButton>
           </div>
         </section>
 
-        <section
-          style={{
-            display: "grid",
-            gap: 12,
-            gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
-          }}
-        >
-          <StatCard label="Today’s bookings" value={String(todayBookings.length)} sub={today} />
-          <StatCard label="Today’s revenue" value={fmtMoney(todayRevenue, salon.currency)} sub="Non-cancelled" />
-          <StatCard label="Open bookings" value={String(openCount)} sub="Pending + confirmed" />
-          <StatCard label="Completed" value={String(completedCount)} sub="Finished appointments" />
-          <StatCard label="Completed revenue" value={fmtMoney(completedRevenue, salon.currency)} sub="All time" />
+        {/* STATS */}
+
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <StatCard
+            label="Today's bookings"
+            value={String(
+              todayBookings.length
+            )}
+            sub={today}
+          />
+
+          <StatCard
+            label="Today's revenue"
+            value={fmtMoney(
+              todayRevenue,
+              "EUR"
+            )}
+            sub="Non-cancelled"
+          />
+
+          <StatCard
+            label="Open bookings"
+            value={String(
+              openCount
+            )}
+            sub="Pending + confirmed"
+          />
+
+          <StatCard
+            label="Completed"
+            value={String(
+              completedCount
+            )}
+            sub="Finished appointments"
+          />
+
+          <StatCard
+            label="Completed revenue"
+            value={fmtMoney(
+              completedRevenue,
+              "EUR"
+            )}
+            sub="All time"
+          />
         </section>
+
+        {/* ACTIVITY + SPLIT */}
 
         <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2 theme-card" style={{ padding: 18, borderRadius: 24 }}>
+          <div className="rounded-[30px] border border-black/10 bg-white p-6 shadow-sm lg:col-span-2">
             <SectionTitle
               title="7-day activity"
-              subtitle="A quick view of bookings and momentum over the last week."
+              subtitle="Bookings over the last seven days."
             />
 
-            <div style={{ height: 14 }} />
+            <div className="mt-6 grid min-h-[200px] grid-cols-7 items-end gap-3">
+              {weekData.days.map(
+                (day) => {
+                  const height =
+                    `${Math.max(
+                      10,
+                      Math.round(
+                        (day.count /
+                          weekData.maxCount) *
+                          140
+                      )
+                    )}px`;
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-                gap: 12,
-                alignItems: "end",
-                minHeight: 200,
-              }}
-            >
-              {weekData.days.map((d) => {
-                const h = `${Math.max(10, Math.round((d.count / weekData.maxCount) * 140))}px`;
-
-                return (
-                  <div key={d.date} style={{ display: "grid", gap: 8, justifyItems: "center" }}>
+                  return (
                     <div
-                      title={`${d.count} bookings • ${fmtMoney(d.revenue, salon.currency)}`}
-                      style={{
-                        width: "100%",
-                        maxWidth: 56,
-                        height: h,
-                        borderRadius: 16,
-                        border: "1px solid rgba(0,0,0,0.08)",
-                        background: "linear-gradient(180deg, rgba(0,0,0,0.20), rgba(0,0,0,0.05))",
-                      }}
-                    />
-                    <div style={{ fontWeight: 900, fontSize: 12 }}>{d.count}</div>
-                    <div className="theme-muted" style={{ fontSize: 12 }}>
-                      {shortDay(d.date)}
+                      key={
+                        day.date
+                      }
+                      className="grid justify-items-center gap-2"
+                    >
+                      <div
+                        title={`${day.count} bookings • ${fmtMoney(
+                          day.revenue,
+                          "EUR"
+                        )}`}
+                        className="w-full max-w-14 rounded-2xl border border-black/10 bg-neutral-200"
+                        style={{
+                          height,
+                        }}
+                      />
+
+                      <p className="text-xs font-black">
+                        {day.count}
+                      </p>
+
+                      <p className="text-xs text-neutral-400">
+                        {shortDay(
+                          day.date
+                        )}
+                      </p>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                }
+              )}
             </div>
           </div>
 
-          <div className="theme-card" style={{ padding: 18, borderRadius: 24, height: "fit-content" }}>
-            <SectionTitle title="Payment split" subtitle="How customers are paying." />
-            <div style={{ height: 14 }} />
+          <div className="h-fit rounded-[30px] border border-black/10 bg-white p-6 shadow-sm">
+            <SectionTitle
+              title="Payment split"
+              subtitle="How customers are paying."
+            />
 
-            <SplitRow label="Online" value={fmtMoney(onlineRevenue, salon.currency)} />
-            <SplitRow label="At salon" value={fmtMoney(salonRevenue, salon.currency)} />
+            <div className="mt-5">
+              <SplitRow
+                label="Online"
+                value={fmtMoney(
+                  onlineRevenue,
+                  "EUR"
+                )}
+              />
 
-            <div className="divider" style={{ margin: "14px 0" }} />
+              <SplitRow
+                label="At salon"
+                value={fmtMoney(
+                  salonRevenue,
+                  "EUR"
+                )}
+              />
+            </div>
 
-            <SectionTitle title="Status breakdown" subtitle="Current booking mix." />
-            <div style={{ height: 12 }} />
+            <div className="my-5 border-t border-black/10" />
 
-            <StatusRow label="Pending" value={statusBreakdown.pending} />
-            <StatusRow label="Confirmed" value={statusBreakdown.confirmed} />
-            <StatusRow label="Completed" value={statusBreakdown.completed} />
-            <StatusRow label="Cancelled" value={statusBreakdown.cancelled} />
-            <StatusRow label="No-show" value={statusBreakdown.no_show} />
+            <SectionTitle
+              title="Status breakdown"
+              subtitle="Current booking mix."
+            />
+
+            <div className="mt-5">
+              <StatusRow
+                label="Pending"
+                value={
+                  statusBreakdown.pending
+                }
+              />
+
+              <StatusRow
+                label="Confirmed"
+                value={
+                  statusBreakdown.confirmed
+                }
+              />
+
+              <StatusRow
+                label="Completed"
+                value={
+                  statusBreakdown.completed
+                }
+              />
+
+              <StatusRow
+                label="Cancelled"
+                value={
+                  statusBreakdown.cancelled
+                }
+              />
+
+              <StatusRow
+                label="No-show"
+                value={
+                  statusBreakdown.no_show
+                }
+              />
+            </div>
           </div>
         </div>
 
+        {/* TODAY + UPCOMING */}
+
         <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2 theme-card" style={{ padding: 18, borderRadius: 24 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
+          <div className="rounded-[30px] border border-black/10 bg-white p-6 shadow-sm lg:col-span-2">
+            <div className="flex flex-wrap items-end justify-between gap-3">
               <SectionTitle
-                title="Today’s schedule"
+                title="Today's schedule"
                 subtitle={`${todayBookings.length} booking(s) scheduled today.`}
               />
-              <Link href="/portal/barber/schedule" className="link" style={{ fontWeight: 900 }}>
+
+              <Link
+                href="/portal/barber/schedule"
+                className="text-sm font-black text-[#ff355d]"
+              >
                 Open full schedule →
               </Link>
             </div>
 
-            <div style={{ height: 12 }} />
-
-            {todayBookings.length === 0 ? (
-              <div className="theme-muted" style={{ padding: 12 }}>
-                No bookings today yet.
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {todayBookings.map((b) => (
-                  <BookingCard key={b.id} booking={b} currency={salon.currency} />
-                ))}
-              </div>
-            )}
+            <div className="mt-5">
+              {todayBookings.length ===
+              0 ? (
+                <EmptyState text="No bookings today yet." />
+              ) : (
+                <div className="grid gap-3">
+                  {todayBookings.map(
+                    (booking) => (
+                      <BookingCard
+                        key={
+                          booking.id
+                        }
+                        booking={
+                          booking
+                        }
+                      />
+                    )
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="theme-card" style={{ padding: 18, borderRadius: 24, height: "fit-content" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
-              <SectionTitle title="Next appointments" subtitle="Your next 6 upcoming bookings." />
-              <Link href="/portal/barber/bookings" className="link" style={{ fontWeight: 900 }}>
-                Open all →
+          <div className="h-fit rounded-[30px] border border-black/10 bg-white p-6 shadow-sm">
+            <div className="flex items-end justify-between gap-3">
+              <SectionTitle
+                title="Next appointments"
+                subtitle="Your next 6 upcoming bookings."
+              />
+
+              <Link
+                href="/portal/barber/bookings"
+                className="text-sm font-black text-[#ff355d]"
+              >
+                All →
               </Link>
             </div>
 
-            <div style={{ height: 12 }} />
+            <div className="mt-5 grid gap-3">
+              {upcomingBookings.length ===
+              0 ? (
+                <EmptyState text="No upcoming bookings yet." />
+              ) : (
+                upcomingBookings.map(
+                  (booking) => (
+                    <div
+                      key={
+                        booking.id
+                      }
+                      className="rounded-[20px] border border-black/10 bg-neutral-50 p-4"
+                    >
+                      <div className="flex justify-between gap-3">
+                        <p className="font-black">
+                          {formatDate(
+                            booking.date
+                          )}
+                          {" • "}
+                          {
+                            booking.time
+                          }
+                        </p>
 
-            {upcomingBookings.length === 0 ? (
-              <div className="theme-muted">No upcoming bookings yet.</div>
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {upcomingBookings.map((b) => (
-                  <div
-                    key={b.id}
-                    style={{
-                      padding: 12,
-                      borderRadius: 16,
-                      border: "1px solid rgba(0,0,0,0.08)",
-                      background: "rgba(0,0,0,0.02)",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                      <div style={{ fontWeight: 950 }}>
-                        {formatDate(b.date)} • {b.time}
+                        <span
+                          style={statusPillStyle(
+                            booking.status
+                          )}
+                        >
+                          {statusLabel(
+                            booking.status
+                          )}
+                        </span>
                       </div>
-                      <span style={statusPillStyle(b.status)}>{statusLabel(b.status)}</span>
-                    </div>
-                    <div className="theme-muted" style={{ marginTop: 6, fontSize: 13 }}>
-                      {b.serviceName}
-                    </div>
-                    <div className="theme-muted" style={{ marginTop: 4, fontSize: 12 }}>
-                      {b.userEmail}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
 
-            <div className="divider" style={{ margin: "14px 0" }} />
+                      <p className="mt-2 text-sm text-neutral-500">
+                        {
+                          booking.serviceName
+                        }
+                      </p>
 
-            <div style={{ display: "grid", gap: 10 }}>
-              <Link href="/portal/barber/bookings" className="btn btn-primary" style={{ width: "100%" }}>
+                      <p className="mt-1 text-xs text-neutral-400">
+                        {
+                          booking.userEmail
+                        }
+                      </p>
+                    </div>
+                  )
+                )
+              )}
+            </div>
+
+            <div className="mt-5 grid gap-2 border-t border-black/10 pt-5">
+              <PortalButton
+                href="/portal/barber/bookings"
+                primary
+                full
+              >
                 Open bookings
-              </Link>
-              <Link href="/portal/barber/schedule" className="btn btn-secondary" style={{ width: "100%" }}>
+              </PortalButton>
+
+              <PortalButton
+                href="/portal/barber/schedule"
+                full
+              >
                 Open schedule
-              </Link>
-              <Link href="/portal/barber/availability" className="btn btn-secondary" style={{ width: "100%" }}>
+              </PortalButton>
+
+              <PortalButton
+                href="/portal/barber/availability"
+                full
+              >
                 Edit availability
-              </Link>
-              <Link href="/portal/barber/earnings" className="btn btn-secondary" style={{ width: "100%" }}>
+              </PortalButton>
+
+              <PortalButton
+                href="/portal/barber/earnings"
+                full
+              >
                 View earnings
-              </Link>
+              </PortalButton>
             </div>
           </div>
         </div>
@@ -514,112 +1108,215 @@ export default function BarberPortalPage() {
   );
 }
 
-function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
+function PortalButton({
+  href,
+  children,
+  primary,
+  full,
+}: {
+  href: string;
+  children: React.ReactNode;
+  primary?: boolean;
+  full?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`inline-flex items-center justify-center rounded-full px-5 py-3 text-sm font-black transition ${
+        full ? "w-full" : ""
+      } ${
+        primary
+          ? "bg-[#ff355d] text-white shadow-lg shadow-[#ff355d]/20"
+          : "border border-black/10 bg-white text-neutral-900 hover:bg-neutral-50"
+      }`}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function SectionTitle({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle: string;
+}) {
   return (
     <div>
-      <div style={{ fontWeight: 950, fontSize: 16 }}>{title}</div>
-      <div className="theme-muted" style={{ marginTop: 6, fontSize: 13 }}>
+      <h2 className="text-lg font-black">
+        {title}
+      </h2>
+
+      <p className="mt-1 text-sm text-neutral-500">
         {subtitle}
-      </div>
+      </p>
     </div>
   );
 }
 
-function QuickCard({ label, value, sub }: { label: string; value: string; sub: string }) {
+function QuickCard({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+}) {
   return (
-    <div
-      style={{
-        padding: 14,
-        borderRadius: 18,
-        border: "1px solid rgba(0,0,0,0.08)",
-        background: "rgba(0,0,0,0.02)",
-      }}
-    >
-      <div className="theme-muted" style={{ fontSize: 12, fontWeight: 900 }}>
+    <div className="rounded-[20px] border border-white/10 bg-white/10 p-4 backdrop-blur">
+      <p className="text-xs font-black uppercase tracking-wide text-white/40">
         {label}
-      </div>
-      <div style={{ marginTop: 6, fontWeight: 900, fontSize: 18 }}>{value}</div>
-      <div className="theme-muted" style={{ marginTop: 4, fontSize: 12 }}>{sub}</div>
+      </p>
+
+      <p className="mt-2 break-all text-lg font-black text-white">
+        {value}
+      </p>
+
+      <p className="mt-1 text-xs text-white/40">
+        {sub}
+      </p>
     </div>
   );
 }
 
-function StatCard({ label, value, sub }: { label: string; value: string; sub: string }) {
+function StatCard({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+}) {
   return (
-    <div
-      className="theme-card"
-      style={{
-        padding: 16,
-        borderRadius: 22,
-        border: "1px solid rgba(0,0,0,0.06)",
-        background: "rgba(0,0,0,0.02)",
-      }}
-    >
-      <div className="theme-muted" style={{ fontWeight: 900, fontSize: 13 }}>
+    <div className="rounded-[28px] border border-black/10 bg-white p-6 shadow-sm">
+      <p className="text-sm font-bold text-neutral-500">
         {label}
-      </div>
-      <div style={{ marginTop: 8, fontSize: 28, fontWeight: 950 }}>{value}</div>
-      <div className="theme-muted" style={{ marginTop: 8, fontSize: 12 }}>{sub}</div>
+      </p>
+
+      <p className="mt-2 text-3xl font-black tracking-[-0.04em]">
+        {value}
+      </p>
+
+      <p className="mt-2 text-xs font-bold text-neutral-400">
+        {sub}
+      </p>
     </div>
   );
 }
 
-function SplitRow({ label, value }: { label: string; value: string }) {
+function SplitRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
-      <div className="theme-muted" style={{ fontSize: 13, fontWeight: 800 }}>
+    <div className="mb-3 flex justify-between gap-3 text-sm">
+      <span className="font-bold text-neutral-500">
         {label}
-      </div>
-      <div style={{ fontWeight: 900 }}>{value}</div>
+      </span>
+
+      <span className="font-black">
+        {value}
+      </span>
     </div>
   );
 }
 
-function StatusRow({ label, value }: { label: string; value: number }) {
+function StatusRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
-      <div className="theme-muted" style={{ fontSize: 13, fontWeight: 800 }}>
+    <div className="mb-3 flex justify-between gap-3 text-sm">
+      <span className="font-bold text-neutral-500">
         {label}
-      </div>
-      <div style={{ fontWeight: 900 }}>{value}</div>
+      </span>
+
+      <span className="font-black">
+        {value}
+      </span>
     </div>
   );
 }
 
-function BookingCard({ booking, currency }: { booking: Booking; currency: string }) {
+function BookingCard({
+  booking,
+}: {
+  booking: Booking;
+}) {
   return (
-    <div
-      style={{
-        padding: 14,
-        borderRadius: 18,
-        border: "1px solid rgba(0,0,0,0.08)",
-        background: "rgba(0,0,0,0.02)",
-        display: "grid",
-        gap: 8,
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+    <div className="rounded-[22px] border border-black/10 bg-neutral-50 p-5">
+      <div className="flex flex-wrap justify-between gap-4">
         <div>
-          <div style={{ fontWeight: 950 }}>
-            {booking.time} • {booking.serviceName}
-          </div>
-          <div className="theme-muted" style={{ marginTop: 4, fontSize: 13 }}>
-            Customer: {booking.userEmail}
-          </div>
+          <p className="font-black">
+            {booking.time}
+            {" • "}
+            {
+              booking.serviceName
+            }
+          </p>
+
+          <p className="mt-1 text-sm text-neutral-500">
+            Customer:{" "}
+            {
+              booking.userEmail
+            }
+          </p>
         </div>
 
-        <div style={{ display: "grid", justifyItems: "end", gap: 6 }}>
-          <span style={statusPillStyle(booking.status)}>{statusLabel(booking.status)}</span>
-          <div style={{ fontWeight: 950 }}>
-            {fmtMoney(Number(booking.totalEuro) || 0, currency)}
-          </div>
+        <div className="text-right">
+          <span
+            style={statusPillStyle(
+              booking.status
+            )}
+          >
+            {statusLabel(
+              booking.status
+            )}
+          </span>
+
+          <p className="mt-2 font-black">
+            {fmtMoney(
+              Number(
+                booking.totalEuro
+              ) || 0,
+              "EUR"
+            )}
+          </p>
         </div>
       </div>
 
-      <div className="theme-muted" style={{ fontSize: 12 }}>
-        Duration: {booking.durationMin} min • Reserved:{" "}
-        {booking.reservedTimes?.length ? booking.reservedTimes.join(", ") : booking.time}
-      </div>
+      <p className="mt-3 text-xs text-neutral-400">
+        Duration:{" "}
+        {booking.durationMin} min
+        {" • "}Reserved:{" "}
+        {booking.reservedTimes
+          ?.length
+          ? booking.reservedTimes.join(
+              ", "
+            )
+          : booking.time}
+      </p>
+    </div>
+  );
+}
+
+function EmptyState({
+  text,
+}: {
+  text: string;
+}) {
+  return (
+    <div className="rounded-[20px] bg-neutral-50 p-5 text-sm font-bold text-neutral-500">
+      {text}
     </div>
   );
 }

@@ -1,28 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import WebShell from "@/app/Components/WebShell";
-import { useCustomerBarbers } from "@/app/lib/barbersStore";
+import { requireSalonAuth } from "@/app/portal/_lib/portalAuth";
 import {
   getServicesFromSupabase,
   upsertServiceToSupabase,
-  deleteServiceFromSupabase,
   type Service,
 } from "@/app/lib/servicesStore";
-import { requireSalonAuth } from "@/app/portal/_lib/portalAuth";
+import { getBarbersForSalonFromSupabase } from "@/app/lib/barbersSupabase";
+import { supabase } from "@/app/lib/supabase";
 
 const CATEGORIES = ["Haircut", "Fade", "Beard", "Combo", "Color", "Kids", "Other"] as const;
 
-function fmtEUR(v: number) {
+function fmtEUR(value: number) {
   return new Intl.NumberFormat("de-DE", {
     style: "currency",
     currency: "EUR",
-  }).format(v);
+  }).format(value);
 }
 
-function uid(prefix = "svc") {
-  return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
+function uid() {
+  return `svc_${crypto.randomUUID()}`;
 }
 
 export default function SalonServicesPage() {
@@ -30,109 +30,106 @@ export default function SalonServicesPage() {
 
   if (!auth.ok) {
     return (
-      <WebShell title="Access denied" subtitle="You do not have permission to open this page.">
-        <div className="mx-auto max-w-4xl">
-          <div className="theme-card" style={{ padding: 18 }}>
-            <div style={{ fontWeight: 900, fontSize: 18 }}>
-              {auth.reason === "not_logged_in" ? "Please log in" : "Wrong account type"}
-            </div>
-            <div className="theme-muted" style={{ marginTop: 8 }}>
-              This page is only available for salon accounts.
-            </div>
-          </div>
+      <WebShell title="Access denied" subtitle="Salon account required.">
+        <div className="mx-auto max-w-4xl rounded-[28px] border border-black/10 bg-white p-8">
+          This page is only available for salon accounts.
         </div>
       </WebShell>
     );
   }
 
-  const { barbers, refresh: refreshBarbers } = useCustomerBarbers();
+  const salonId = auth.user.salonId ?? "";
 
   const [services, setServices] = useState<Service[]>([]);
-  const [q, setQ] = useState("");
-  const [filterBarberId, setFilterBarberId] = useState<string>("all");
+  const [barbers, setBarbers] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
-
+  const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [name, setName] = useState("");
-  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("Haircut");
-  const [durationMin, setDurationMin] = useState<number>(30);
-  const [basePriceEuro, setBasePriceEuro] = useState<number>(25);
-  const [description, setDescription] = useState<string>("");
+  const [category, setCategory] =
+    useState<(typeof CATEGORIES)[number]>("Haircut");
+  const [durationMin, setDurationMin] = useState(30);
+  const [basePriceEuro, setBasePriceEuro] = useState(25);
+  const [description, setDescription] = useState("");
   const [assignedBarberIds, setAssignedBarberIds] = useState<string[]>([]);
   const [active, setActive] = useState(true);
 
   async function refresh() {
     try {
       setLoading(true);
+
+      if (!salonId) {
+        setServices([]);
+        setBarbers([]);
+        return;
+      }
+
+      const salonBarbers = await getBarbersForSalonFromSupabase(salonId);
+      const allowedIds = new Set(salonBarbers.map((b) => b.id));
+
+      setBarbers(salonBarbers.map((b) => ({ id: b.id, name: b.name })));
+
       const rows = await getServicesFromSupabase(true);
 
       const grouped = new Map<string, Service>();
 
-      for (const row of rows as any[]) {
-        const baseId = String(row.id).includes("_")
-          ? String(row.id).split("_").slice(0, -1).join("_") || String(row.id)
-          : String(row.id);
+      for (const row of rows) {
+        const rowBarberIds = (row.barberIds ?? []).filter((id) => allowedIds.has(id));
+        if (rowBarberIds.length === 0) continue;
 
-        const barberId = row.barberIds?.[0] || row.barber_id;
+        const rawId = String(row.id);
+        const matchingBarberId = rowBarberIds[0];
+
+        const suffix = `_${matchingBarberId}`;
+        const baseId = rawId.endsWith(suffix)
+          ? rawId.slice(0, -suffix.length)
+          : rawId;
 
         const existing = grouped.get(baseId);
 
         if (existing) {
-          if (barberId && !existing.barberIds.includes(barberId)) {
-            existing.barberIds.push(barberId);
+          for (const barberId of rowBarberIds) {
+            if (!existing.barberIds.includes(barberId)) {
+              existing.barberIds.push(barberId);
+            }
           }
         } else {
           grouped.set(baseId, {
+            ...row,
             id: baseId,
-            name: row.name,
-            category: row.category,
-            durationMin: Number(row.durationMin ?? row.duration_min ?? 30),
-            basePriceEuro: Number(row.basePriceEuro ?? row.base_price_euro ?? 0),
-            description: row.description ?? undefined,
-            barberIds: barberId ? [barberId] : [],
-            active: row.active ?? true,
+            barberIds: [...rowBarberIds],
           });
         }
       }
 
       setServices(Array.from(grouped.values()));
-    } catch (err) {
-      console.error("Failed to load services:", err);
+    } catch (error) {
+      console.error("Failed to load salon services:", error);
       setServices([]);
+      alert("Could not load this salon's services.");
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    refreshBarbers();
-    refresh();
-  }, [refreshBarbers]);
+    void refresh();
+  }, [salonId]);
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
-    let arr = services.slice();
 
-    if (query) {
-      arr = arr.filter((s) => {
-        const hay = `${s.name} ${s.category} ${s.description ?? ""}`.toLowerCase();
-        return hay.includes(query);
-      });
-    }
-
-    if (filterBarberId !== "all") {
-      arr = arr.filter((s) => (s.barberIds ?? []).includes(filterBarberId));
-    }
-
-    arr.sort((a, b) => {
-      if (a.category !== b.category) return a.category.localeCompare(b.category);
-      return a.name.localeCompare(b.name);
-    });
-
-    return arr;
-  }, [services, q, filterBarberId]);
+    return services
+      .filter((service) => {
+        if (!query) return true;
+        return `${service.name} ${service.category} ${service.description ?? ""}`
+          .toLowerCase()
+          .includes(query);
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [services, q]);
 
   function resetForm() {
     setEditingId(null);
@@ -145,49 +142,51 @@ export default function SalonServicesPage() {
     setActive(true);
   }
 
-  function closeModal() {
-    setOpen(false);
-    resetForm();
-  }
-
   function openCreate() {
     resetForm();
     setOpen(true);
   }
 
-  function openEdit(s: Service) {
-    setEditingId(s.id);
-    setName(s.name);
-    setCategory((s.category as (typeof CATEGORIES)[number]) ?? "Haircut");
-    setDurationMin(Number(s.durationMin || 30));
-    setBasePriceEuro(Number(s.basePriceEuro || 0));
-    setDescription(s.description ?? "");
-    setAssignedBarberIds(Array.isArray(s.barberIds) ? s.barberIds : []);
-    setActive(s.active ?? true);
+  function openEdit(service: Service) {
+    setEditingId(service.id);
+    setName(service.name);
+    setCategory(
+      CATEGORIES.includes(service.category as (typeof CATEGORIES)[number])
+        ? (service.category as (typeof CATEGORIES)[number])
+        : "Other"
+    );
+    setDurationMin(service.durationMin);
+    setBasePriceEuro(service.basePriceEuro);
+    setDescription(service.description ?? "");
+    setAssignedBarberIds(service.barberIds ?? []);
+    setActive(service.active !== false);
     setOpen(true);
   }
 
-  function toggleAssign(id: string) {
-    setAssignedBarberIds((prev) => {
-      const set = new Set(prev);
-      if (set.has(id)) set.delete(id);
-      else set.add(id);
-      return Array.from(set);
-    });
+  function toggleBarber(id: string) {
+    setAssignedBarberIds((current) =>
+      current.includes(id)
+        ? current.filter((x) => x !== id)
+        : [...current, id]
+    );
   }
 
-  function validate(): string | null {
-    if (!name.trim()) return "Service name is required.";
-    if (durationMin < 5 || durationMin > 240) return "Duration must be between 5 and 240 minutes.";
-    if (basePriceEuro < 0 || basePriceEuro > 999) return "Price must be between 0 and 999.";
-    if (assignedBarberIds.length === 0) return "Assign this service to at least one barber.";
-    return null;
-  }
+  async function saveService() {
+    if (!name.trim()) {
+      alert("Service name is required.");
+      return;
+    }
 
-  async function onSave() {
-    const err = validate();
-    if (err) {
-      alert(err);
+    if (assignedBarberIds.length === 0) {
+      alert("Assign this service to at least one barber in this salon.");
+      return;
+    }
+
+    const allowedIds = new Set(barbers.map((b) => b.id));
+    const safeAssignments = assignedBarberIds.filter((id) => allowedIds.has(id));
+
+    if (safeAssignments.length === 0) {
+      alert("The selected barbers do not belong to this salon.");
       return;
     }
 
@@ -198,382 +197,336 @@ export default function SalonServicesPage() {
       durationMin: Math.round(durationMin),
       basePriceEuro: Math.round(basePriceEuro * 100) / 100,
       description: description.trim() || undefined,
-      barberIds: assignedBarberIds,
+      barberIds: safeAssignments,
       active,
       updatedAt: new Date().toISOString(),
     };
 
     try {
+      // Delete only rows of this service that belong to this salon.
+      if (editingId) {
+        await deleteServiceRowsForSalon(editingId, barbers.map((b) => b.id));
+      }
+
       await upsertServiceToSupabase(payload);
+      setOpen(false);
+      resetForm();
       await refresh();
-      closeModal();
     } catch (error) {
       console.error("Failed to save service:", error);
-      alert("Failed to save service.");
+      alert(getErrorMessage(error, "Failed to save service."));
     }
   }
 
-  async function onDelete(id: string) {
-    if (!confirm("Delete this service?")) return;
+  async function deleteService(serviceId: string) {
+    if (!confirm("Delete this service from this salon?")) return;
 
     try {
-      await deleteServiceFromSupabase(id);
-      await refresh();
+      await deleteServiceRowsForSalon(
+        serviceId,
+        barbers.map((barber) => barber.id)
+      );
 
-      if (editingId === id) {
-        closeModal();
-      }
+      await refresh();
     } catch (error) {
       console.error("Failed to delete service:", error);
-      alert("Failed to delete service.");
+      alert(getErrorMessage(error, "Failed to delete service."));
     }
-  }
-
-  function barberName(id: string) {
-    return barbers.find((b) => b.id === id)?.name ?? id;
   }
 
   return (
-    <WebShell title="Salon Services" subtitle="Create services and assign them to barbers.">
-      <div className="mx-auto max-w-6xl" style={{ display: "grid", gap: 14 }}>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Link href="/portal/salon" className="btn btn-secondary">
-            ← Back to salon dashboard
-          </Link>
-          <Link href="/portal/salon/staff" className="btn btn-secondary">
-            Staff
-          </Link>
-          <Link href="/portal/salon/bookings" className="btn btn-secondary">
-            Bookings
-          </Link>
-          <button className="btn btn-primary" onClick={openCreate}>
+    <WebShell
+      title="Salon Services"
+      subtitle="Only services assigned to barbers in this salon are shown."
+    >
+      <div className="mx-auto max-w-6xl">
+        <PortalNav />
+
+        <div className="mt-8 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">
+              Services
+            </p>
+            <h1 className="mt-2 text-4xl font-black tracking-[-0.04em]">
+              Your service menu
+            </h1>
+            <p className="mt-2 text-neutral-500">
+              {loading ? "Loading…" : `${services.length} service(s) in this salon.`}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={openCreate}
+            disabled={barbers.length === 0}
+            className="rounded-full bg-[#ff355d] px-6 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
             + New service
           </button>
         </div>
 
-        <div className="theme-card" style={{ padding: 16, borderRadius: 20 }}>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-            <div style={{ flex: "1 1 360px", minWidth: 240 }}>
-              <div style={{ fontWeight: 900, marginBottom: 8 }}>Search services</div>
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search by name, category, description…"
-                className="input"
-                style={inputStyle}
-              />
-            </div>
+        {barbers.length === 0 && !loading ? (
+          <div className="mt-6 rounded-[28px] border border-amber-200 bg-amber-50 p-5 text-amber-900">
+            Add at least one barber before creating services.
+          </div>
+        ) : null}
 
-            <div style={{ width: 320, maxWidth: "100%" }}>
-              <div style={{ fontWeight: 900, marginBottom: 8 }}>Filter by barber</div>
-              <select
-                value={filterBarberId}
-                onChange={(e) => setFilterBarberId(e.target.value)}
-                style={inputStyle}
+        <div className="mt-6 rounded-[28px] border border-black/10 bg-white p-5">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search services..."
+            className="h-12 w-full rounded-2xl border border-black/10 bg-neutral-50 px-4 outline-none"
+          />
+        </div>
+
+        <div className="mt-5 grid gap-4">
+          {!loading && filtered.length === 0 ? (
+            <div className="rounded-[28px] border border-dashed border-black/10 bg-white p-10 text-center">
+              <h2 className="text-xl font-black">No services yet</h2>
+              <p className="mt-2 text-sm text-neutral-500">
+                Services from other salons will not appear here.
+              </p>
+            </div>
+          ) : (
+            filtered.map((service) => (
+              <div
+                key={service.id}
+                className="flex flex-wrap items-center justify-between gap-5 rounded-[28px] border border-black/10 bg-white p-5"
               >
-                <option value="all">All barbers</option>
-                {barbers.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-xl font-black">{service.name}</h3>
+                    <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-black">
+                      {service.category}
+                    </span>
+                  </div>
+
+                  <p className="mt-2 text-sm text-neutral-500">
+                    {service.durationMin} min • {fmtEUR(service.basePriceEuro)}
+                  </p>
+
+                  <p className="mt-2 text-xs font-bold text-neutral-400">
+                    Assigned to{" "}
+                    {service.barberIds
+                      .map((id) => barbers.find((b) => b.id === id)?.name)
+                      .filter(Boolean)
+                      .join(", ") || "no barber"}
+                  </p>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => openEdit(service)}
+                    className="rounded-full border border-black/10 px-5 py-2.5 text-sm font-black"
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    onClick={() => void deleteService(service.id)}
+                    className="rounded-full bg-red-50 px-5 py-2.5 text-sm font-black text-red-600"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {open ? (
+        <div className="fixed inset-0 z-[100] grid place-items-center bg-black/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-[32px] bg-white p-7 shadow-2xl">
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="text-3xl font-black">
+                  {editingId ? "Edit service" : "New service"}
+                </h2>
+                <p className="mt-2 text-sm text-neutral-500">
+                  Assign the service only to barbers in this salon.
+                </p>
+              </div>
+              <button onClick={() => setOpen(false)} className="text-2xl">×</button>
             </div>
 
-            <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
-              <span className="theme-muted" style={{ fontSize: 13 }}>
-                {loading ? "Loading..." : `${filtered.length} service(s)`}
-              </span>
-              <button className="btn btn-secondary" onClick={refresh}>
-                Refresh
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <Input label="Name" value={name} onChange={setName} />
+
+              <label className="grid gap-2">
+                <span className="text-sm font-black">Category</span>
+                <select
+                  value={category}
+                  onChange={(e) =>
+                    setCategory(e.target.value as (typeof CATEGORIES)[number])
+                  }
+                  className="h-12 rounded-2xl border border-black/10 bg-neutral-50 px-4"
+                >
+                  {CATEGORIES.map((item) => (
+                    <option key={item}>{item}</option>
+                  ))}
+                </select>
+              </label>
+
+              <NumberInput
+                label="Duration (minutes)"
+                value={durationMin}
+                onChange={setDurationMin}
+              />
+
+              <NumberInput
+                label="Price (€)"
+                value={basePriceEuro}
+                onChange={setBasePriceEuro}
+              />
+
+              <div className="sm:col-span-2">
+                <Input
+                  label="Description"
+                  value={description}
+                  onChange={setDescription}
+                />
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <p className="text-sm font-black">Assigned barbers</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {barbers.map((barber) => (
+                  <label
+                    key={barber.id}
+                    className="flex items-center gap-3 rounded-2xl border border-black/10 p-3"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={assignedBarberIds.includes(barber.id)}
+                      onChange={() => toggleBarber(barber.id)}
+                    />
+                    <span className="font-bold">{barber.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <label className="mt-5 flex items-center gap-3 font-bold">
+              <input
+                type="checkbox"
+                checked={active}
+                onChange={(e) => setActive(e.target.checked)}
+              />
+              Active
+            </label>
+
+            <div className="mt-7 flex justify-end gap-3">
+              <button
+                onClick={() => setOpen(false)}
+                className="rounded-full border border-black/10 px-5 py-3 font-black"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void saveService()}
+                className="rounded-full bg-[#ff355d] px-6 py-3 font-black text-white"
+              >
+                Save service
               </button>
             </div>
           </div>
-
-          <div className="theme-muted" style={{ marginTop: 10, fontSize: 12, lineHeight: 1.5 }}>
-            Customer pages and booking flow read services from Supabase. If a barber has no
-            services, assign at least one here.
-          </div>
         </div>
-
-        <div className="theme-card" style={{ padding: 16, borderRadius: 20 }}>
-          {loading ? (
-            <div className="theme-muted" style={{ padding: 8 }}>
-              Loading services...
-            </div>
-          ) : !filtered.length ? (
-            <div className="theme-muted" style={{ padding: 8 }}>
-              No services found.
-            </div>
-          ) : (
-            <div style={{ display: "grid", gap: 10 }}>
-              {filtered.map((s) => (
-                <div
-                  key={s.id}
-                  style={{
-                    borderRadius: 18,
-                    border: "1px solid rgba(0,0,0,0.08)",
-                    background: "rgba(0,0,0,0.02)",
-                    padding: 14,
-                    display: "grid",
-                    gap: 10,
-                    opacity: s.active ? 1 : 0.65,
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                    <div style={{ minWidth: 220 }}>
-                      <div style={{ fontWeight: 950, fontSize: 16 }}>{s.name}</div>
-                      <div className="theme-muted" style={{ marginTop: 4, fontSize: 13 }}>
-                        {s.category} • {s.durationMin} min • {s.active ? "Active" : "Hidden"}
-                      </div>
-                      {s.description ? (
-                        <div className="theme-muted" style={{ marginTop: 6, fontSize: 13, lineHeight: 1.5 }}>
-                          {s.description}
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                      <span style={{ fontWeight: 950 }}>{fmtEUR(s.basePriceEuro || 0)}</span>
-                      <button className="btn btn-secondary" onClick={() => openEdit(s)}>
-                        Edit
-                      </button>
-                      <button className="btn btn-secondary" onClick={() => onDelete(s.id)}>
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {(s.barberIds ?? []).map((bid) => (
-                      <span
-                        key={bid}
-                        style={{
-                          display: "inline-flex",
-                          padding: "6px 10px",
-                          borderRadius: 999,
-                          fontSize: 12,
-                          fontWeight: 900,
-                          border: "1px solid rgba(0,0,0,0.10)",
-                          background: "rgba(0,0,0,0.03)",
-                        }}
-                      >
-                        {barberName(bid)}
-                      </span>
-                    ))}
-                    {!s.barberIds?.length ? (
-                      <span className="theme-muted" style={{ fontSize: 12 }}>
-                        Not assigned to any barber
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {open ? (
-          <div
-              role="dialog"
-              aria-modal="true"
-              style={{
-                position: "fixed",
-                inset: 0,
-                background: "rgba(0,0,0,0.55)",
-                display: "grid",
-                placeItems: "center",
-                padding: 16,
-                zIndex: 9999,
-              }}
-              onClick={closeModal}
-            >
-              <div
-                className="theme-card"
-                style={{
-                  width: "min(860px, calc(100vw - 32px))",
-                  maxHeight: "90vh",
-                  overflowY: "auto",
-                  padding: 22,
-                  borderRadius: 28,
-                  background: "white",
-                  zIndex: 10000,
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                <div style={{ fontWeight: 950, fontSize: 16 }}>
-                  {editingId ? "Edit service" : "New service"}
-                </div>
-                <button className="btn btn-secondary" onClick={closeModal}>
-                  Close
-                </button>
-              </div>
-
-              <div className="divider" style={{ margin: "14px 0" }} />
-
-              <div
-                style={{
-                  display: "grid",
-                  gap: 14,
-                  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-                }}
-              >
-                <Field label="Name">
-                  <input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g., Haircut + wash"
-                    style={inputStyle}
-                  />
-                </Field>
-
-                <Field label="Category">
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value as (typeof CATEGORIES)[number])}
-                    style={inputStyle}
-                  >
-                    {CATEGORIES.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-
-                <Field label="Duration (minutes)">
-                  <input
-                    type="number"
-                    value={durationMin}
-                    onChange={(e) => setDurationMin(Number(e.target.value))}
-                    min={5}
-                    max={240}
-                    step={5}
-                    style={inputStyle}
-                  />
-                </Field>
-
-                <Field label="Base price (€)">
-                  <input
-                    type="number"
-                    value={basePriceEuro}
-                    onChange={(e) => setBasePriceEuro(Number(e.target.value))}
-                    min={0}
-                    max={999}
-                    step={1}
-                    style={inputStyle}
-                  />
-                </Field>
-
-                <Field label="Visible to customers">
-                  <label style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 44 }}>
-                    <input
-                      type="checkbox"
-                      checked={active}
-                      onChange={(e) => setActive(e.target.checked)}
-                    />
-                    <span className="theme-muted" style={{ fontSize: 13 }}>
-                      {active ? "Active" : "Hidden"}
-                    </span>
-                  </label>
-                </Field>
-
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <Field label="Description (optional)">
-                    <textarea
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      placeholder="Short details customers will see…"
-                      style={{ ...inputStyle, height: 90, paddingTop: 10 }}
-                    />
-                  </Field>
-                </div>
-
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Assign to barbers</div>
-                  <div
-                    style={{
-                      display: "grid",
-                      gap: 10,
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    }}
-                  >
-                    {barbers.map((b) => {
-                      const isOn = assignedBarberIds.includes(b.id);
-                      return (
-                        <button
-                          key={b.id}
-                          type="button"
-                          onClick={() => toggleAssign(b.id)}
-                          style={{
-                            textAlign: "left",
-                            padding: 12,
-                            borderRadius: 16,
-                            border: isOn
-                              ? "1px solid rgba(0,0,0,0.20)"
-                              : "1px solid rgba(0,0,0,0.08)",
-                            background: isOn ? "rgba(0,0,0,0.05)" : "rgba(0,0,0,0.02)",
-                            cursor: "pointer",
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: 10,
-                            alignItems: "center",
-                          }}
-                        >
-                          <div>
-                            <div style={{ fontWeight: 900 }}>{b.name}</div>
-                            <div className="theme-muted" style={{ fontSize: 12, marginTop: 2 }}>
-                              {b.area}
-                            </div>
-                          </div>
-                          <div style={{ fontWeight: 950 }}>{isOn ? "✓" : ""}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="theme-muted" style={{ marginTop: 8, fontSize: 12 }}>
-                    Selected:{" "}
-                    {assignedBarberIds.length
-                      ? assignedBarberIds.map(barberName).join(", ")
-                      : "none"}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
-                <button className="btn btn-secondary" onClick={closeModal}>
-                  Cancel
-                </button>
-                <button className="btn btn-primary" onClick={onSave}>
-                  {editingId ? "Save changes" : "Create service"}
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
-      </div>
+      ) : null}
     </WebShell>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+async function deleteServiceRowsForSalon(
+  baseServiceId: string,
+  salonBarberIds: string[]
+) {
+  if (salonBarberIds.length === 0) return;
+
+  const { data, error: loadError } = await supabase
+    .from("services")
+    .select("id,barber_id")
+    .in("barber_id", salonBarberIds);
+
+  if (loadError) throw loadError;
+
+  const rowIds = (data ?? [])
+    .filter((row) => {
+      const id = String(row.id);
+      return id === baseServiceId || id.startsWith(`${baseServiceId}_`);
+    })
+    .map((row) => row.id);
+
+  if (rowIds.length === 0) return;
+
+  const { error: deleteError } = await supabase
+    .from("services")
+    .delete()
+    .in("id", rowIds);
+
+  if (deleteError) throw deleteError;
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return fallback;
+}
+
+function PortalNav() {
   return (
-    <div style={{ display: "grid", gap: 8 }}>
-      <div style={{ fontWeight: 900 }}>{label}</div>
-      {children}
+    <div className="flex flex-wrap gap-2">
+      <Link href="/portal/salon" className="btn btn-secondary">← Dashboard</Link>
+      <Link href="/portal/salon/bookings" className="btn btn-secondary">Bookings</Link>
+      <Link href="/portal/salon/staff" className="btn btn-secondary">Staff</Link>
+      <Link href="/portal/salon/availability" className="btn btn-secondary">Availability</Link>
+      <Link href="/portal/salon/settings" className="btn btn-secondary">Settings</Link>
     </div>
   );
 }
 
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  height: 44,
-  padding: "0 12px",
-  borderRadius: 14,
-  border: "1px solid rgba(0,0,0,0.10)",
-  background: "rgba(0,0,0,0.02)",
-  outline: "none",
-  fontWeight: 800,
-};
+function Input({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="grid gap-2">
+      <span className="text-sm font-black">{label}</span>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-12 rounded-2xl border border-black/10 bg-neutral-50 px-4 outline-none"
+      />
+    </label>
+  );
+}
+
+function NumberInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="grid gap-2">
+      <span className="text-sm font-black">{label}</span>
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="h-12 rounded-2xl border border-black/10 bg-neutral-50 px-4 outline-none"
+      />
+    </label>
+  );
+}
