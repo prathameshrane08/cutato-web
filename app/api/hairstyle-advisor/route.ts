@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
+import { rateLimit } from "@/app/lib/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -19,12 +20,14 @@ type HairstyleAnalysis = {
 };
 
 export async function POST(request: Request) {
+  const limited = rateLimit(request, "hairstyle-advisor", { limit: 10, windowMs: 60_000 });
+  if (limited) return limited;
+
   try {
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
         {
-          error:
-            "OPENAI_API_KEY is missing from your .env.local file.",
+          error: "The hairstyle advisor is temporarily unavailable.",
         },
         {
           status: 500,
@@ -43,6 +46,13 @@ export async function POST(request: Request) {
         {
           status: 400,
         }
+      );
+    }
+
+    if (image.length > 11_000_000) {
+      return NextResponse.json(
+        { error: "That photo is too large. Please upload one under 8 MB." },
+        { status: 413 }
       );
     }
 
@@ -141,18 +151,13 @@ When uncertain, use your best visual estimate and reduce confidence.
       .replace(/\s*```$/i, "")
       .trim();
 
-    const analysis = JSON.parse(
-      cleanedOutput
-    ) as HairstyleAnalysis;
+    const analysis = JSON.parse(cleanedOutput) as HairstyleAnalysis;
 
     return NextResponse.json(analysis);
   } catch (error: unknown) {
     console.error("HAIRSTYLE ANALYSIS ERROR:", error);
 
-    const message =
-      error instanceof Error
-        ? error.message
-        : "An unknown error occurred.";
+    const message = error instanceof Error ? error.message : "An unknown error occurred.";
 
     return NextResponse.json(
       {

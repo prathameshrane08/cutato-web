@@ -29,9 +29,7 @@ export async function getBarbersFromSupabase(): Promise<SupabaseBarber[]> {
   return data ?? [];
 }
 
-export async function getBarbersForSalonFromSupabase(
-  salonId: string
-): Promise<SupabaseBarber[]> {
+export async function getBarbersForSalonFromSupabase(salonId: string): Promise<SupabaseBarber[]> {
   if (!salonId) return [];
 
   const { data, error } = await supabase
@@ -44,29 +42,19 @@ export async function getBarbersForSalonFromSupabase(
   return data ?? [];
 }
 
-export async function upsertBarberToSupabase(
-  barber: SupabaseBarber
-): Promise<void> {
+export async function upsertBarberToSupabase(barber: SupabaseBarber): Promise<void> {
   const payload = {
     ...barber,
     updated_at: new Date().toISOString(),
   };
 
-  const { error } = await supabase
-    .from("barbers")
-    .upsert(payload);
+  const { error } = await supabase.from("barbers").upsert(payload);
 
   if (error) throw error;
 }
 
-export async function deleteBarberFromSupabase(
-  id: string,
-  salonId?: string
-): Promise<void> {
-  let query = supabase
-    .from("barbers")
-    .delete()
-    .eq("id", id);
+export async function deleteBarberFromSupabase(id: string, salonId?: string): Promise<void> {
+  let query = supabase.from("barbers").delete().eq("id", id);
 
   if (salonId) {
     query = query.eq("salon_id", salonId);
@@ -76,14 +64,8 @@ export async function deleteBarberFromSupabase(
   if (error) throw error;
 }
 
-export async function getBarberByIdFromSupabase(
-  id: string
-): Promise<SupabaseBarber | null> {
-  const { data, error } = await supabase
-    .from("barbers")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
+export async function getBarberByIdFromSupabase(id: string): Promise<SupabaseBarber | null> {
+  const { data, error } = await supabase.from("barbers").select("*").eq("id", id).maybeSingle();
 
   if (error) throw error;
   return data ?? null;

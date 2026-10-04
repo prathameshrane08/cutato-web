@@ -46,24 +46,19 @@ export default function ResetPasswordPage() {
       setTimeout(() => {
         router.push("/login");
       }, 1500);
-    } catch (err: any) {
-      setError(err?.message || "Could not update password.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update password.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <WebShell
-      title="Create new password"
-      subtitle="Choose a secure password for your account."
-    >
+    <WebShell title="Create new password" subtitle="Choose a secure password for your account.">
       <div className="mx-auto max-w-md rounded-[34px] border border-black/10 bg-white p-8 shadow-sm">
         <form onSubmit={onSubmit} className="grid gap-5">
           <div>
-            <label className="text-sm font-black">
-              New password
-            </label>
+            <label className="text-sm font-black">New password</label>
 
             <input
               type="password"
@@ -75,9 +70,7 @@ export default function ResetPasswordPage() {
           </div>
 
           <div>
-            <label className="text-sm font-black">
-              Confirm password
-            </label>
+            <label className="text-sm font-black">Confirm password</label>
 
             <input
               type="password"

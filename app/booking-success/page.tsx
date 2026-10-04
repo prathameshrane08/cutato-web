@@ -199,8 +199,8 @@ function BookingSuccessInner() {
 
               <p className="mt-5 max-w-2xl text-base leading-7 text-white/60">
                 Your appointment with{" "}
-                <span className="font-black text-white">{booking.barberName}</span>{" "}
-                has been created successfully.
+                <span className="font-black text-white">{booking.barberName}</span> has been created
+                successfully.
               </p>
 
               <div className="mt-8 flex flex-wrap gap-3">
@@ -229,7 +229,11 @@ function BookingSuccessInner() {
 
               <HeroRow icon={<Scissors />} label="Service" value={booking.serviceName} />
               <HeroRow icon={<Clock />} label="Time" value={`${booking.date} • ${booking.time}`} />
-              <HeroRow icon={<CreditCard />} label="Payment" value={paymentLabel(booking.paymentMethod)} />
+              <HeroRow
+                icon={<CreditCard />}
+                label="Payment"
+                value={paymentLabel(booking.paymentMethod)}
+              />
             </div>
           </div>
         </section>
@@ -264,7 +268,9 @@ function BookingSuccessInner() {
               <Row label="Time" value={booking.time} />
               <Row
                 label="Reserved"
-                value={booking.reservedTimes?.length ? booking.reservedTimes.join(", ") : booking.time}
+                value={
+                  booking.reservedTimes?.length ? booking.reservedTimes.join(", ") : booking.time
+                }
               />
               <Row label="Payment" value={paymentLabel(booking.paymentMethod)} />
             </div>
@@ -343,15 +349,7 @@ function BookingSuccessLoading() {
   );
 }
 
-function HeroRow({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-}) {
+function HeroRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div className="mb-4 flex items-start gap-3">
       <div className="mt-0.5 text-[#ff355d]">{icon}</div>
@@ -372,21 +370,11 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function InfoBox({
-  icon,
-  title,
-  text,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  text: string;
-}) {
+function InfoBox({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
   return (
     <div className="rounded-[30px] border border-black/10 bg-white p-6 shadow-sm">
       <div className="flex items-center gap-3">
-        <div className="rounded-2xl bg-[#ff355d]/10 p-3 text-[#ff355d]">
-          {icon}
-        </div>
+        <div className="rounded-2xl bg-[#ff355d]/10 p-3 text-[#ff355d]">{icon}</div>
 
         <div>
           <h3 className="font-black">{title}</h3>
@@ -397,15 +385,7 @@ function InfoBox({
   );
 }
 
-function MapCard({
-  title,
-  name,
-  address,
-}: {
-  title: string;
-  name: string;
-  address: string;
-}) {
+function MapCard({ title, name, address }: { title: string; name: string; address: string }) {
   const mapsHref = address
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}`;

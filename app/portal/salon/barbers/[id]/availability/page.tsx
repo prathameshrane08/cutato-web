@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import WebShell from "@/app/Components/WebShell";
+import PortalShell from "@/app/Components/portal/PortalShell";
 import { createClient } from "@/app/lib/supabase/client";
+import { authorizedFetch } from "@/app/lib/supabase/authorizedFetch";
+import { toast } from "@/app/lib/toast";
 
 const days = [
   { day: 0, label: "Sun" },
@@ -46,7 +48,7 @@ export default function BarberAvailabilityPage() {
         .order("day_of_week");
 
       if (error) {
-        alert(error.message);
+        toast.error(error.message);
         return;
       }
 
@@ -70,14 +72,12 @@ export default function BarberAvailabilityPage() {
     );
   }
 
-  function updateLocal(day: number, key: keyof WorkingHour, value: any) {
+  function updateLocal<K extends keyof WorkingHour>(day: number, key: K, value: WorkingHour[K]) {
     setRows((prev) => {
       const existing = prev.find((r) => r.day_of_week === day);
 
       if (existing) {
-        return prev.map((r) =>
-          r.day_of_week === day ? { ...r, [key]: value } : r
-        );
+        return prev.map((r) => (r.day_of_week === day ? { ...r, [key]: value } : r));
       }
 
       return [
@@ -102,7 +102,7 @@ export default function BarberAvailabilityPage() {
 
       const row = getRow(day);
 
-      const res = await fetch("/api/salon/barbers/availability", {
+      const res = await authorizedFetch("/api/salon/barbers/availability", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -121,13 +121,13 @@ export default function BarberAvailabilityPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        alert(data.error || "Could not save availability");
+        toast.error(data.error || "Could not save availability");
         return;
       }
 
       await load();
-    } catch (err: any) {
-      alert(err?.message || "Could not save availability");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save availability");
     } finally {
       setSavingDay(null);
     }
@@ -138,7 +138,7 @@ export default function BarberAvailabilityPage() {
   }, [barberId]);
 
   return (
-    <WebShell title="Barber availability" subtitle="Set weekly working hours.">
+    <PortalShell role="salon" title="Barber availability" subtitle="Set weekly working hours.">
       <div className="grid gap-4">
         {loading ? (
           <div className="rounded-[28px] bg-white p-8">Loading...</div>
@@ -157,36 +157,28 @@ export default function BarberAvailabilityPage() {
                   <input
                     type="time"
                     value={row.start_time?.slice(0, 5) || "09:00"}
-                    onChange={(e) =>
-                      updateLocal(day, "start_time", e.target.value)
-                    }
+                    onChange={(e) => updateLocal(day, "start_time", e.target.value)}
                     className="rounded-2xl border border-black/10 bg-neutral-50 px-4 py-3 font-bold"
                   />
 
                   <input
                     type="time"
                     value={row.end_time?.slice(0, 5) || "18:00"}
-                    onChange={(e) =>
-                      updateLocal(day, "end_time", e.target.value)
-                    }
+                    onChange={(e) => updateLocal(day, "end_time", e.target.value)}
                     className="rounded-2xl border border-black/10 bg-neutral-50 px-4 py-3 font-bold"
                   />
 
                   <input
                     type="time"
                     value={row.break_start?.slice(0, 5) || ""}
-                    onChange={(e) =>
-                      updateLocal(day, "break_start", e.target.value || null)
-                    }
+                    onChange={(e) => updateLocal(day, "break_start", e.target.value || null)}
                     className="rounded-2xl border border-black/10 bg-neutral-50 px-4 py-3 font-bold"
                   />
 
                   <input
                     type="time"
                     value={row.break_end?.slice(0, 5) || ""}
-                    onChange={(e) =>
-                      updateLocal(day, "break_end", e.target.value || null)
-                    }
+                    onChange={(e) => updateLocal(day, "break_end", e.target.value || null)}
                     className="rounded-2xl border border-black/10 bg-neutral-50 px-4 py-3 font-bold"
                   />
 
@@ -194,9 +186,7 @@ export default function BarberAvailabilityPage() {
                     <input
                       type="checkbox"
                       checked={row.active}
-                      onChange={(e) =>
-                        updateLocal(day, "active", e.target.checked)
-                      }
+                      onChange={(e) => updateLocal(day, "active", e.target.checked)}
                       className="h-4 w-4 accent-[#ff355d]"
                     />
                     Active
@@ -215,6 +205,6 @@ export default function BarberAvailabilityPage() {
           })
         )}
       </div>
-    </WebShell>
+    </PortalShell>
   );
 }

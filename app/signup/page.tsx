@@ -3,14 +3,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  CalendarCheck,
-  CheckCircle2,
-  Lock,
-  Scissors,
-  Sparkles,
-  Star,
-} from "lucide-react";
+import { CalendarCheck, CheckCircle2, Lock, Scissors, Sparkles, Star } from "lucide-react";
 import { upsertProfile } from "@/app/lib/profilesSupabase";
 import WebShell from "@/app/Components/WebShell";
 import { getAuthUser, signIn } from "@/app/Components/auth";
@@ -49,58 +42,55 @@ function SignupPageInner() {
   }, [router, next]);
 
   async function onSubmit(e: React.FormEvent) {
-  e.preventDefault();
-  setError("");
+    e.preventDefault();
+    setError("");
 
-  const em = email.trim().toLowerCase();
+    const em = email.trim().toLowerCase();
 
-  if (!em) return setError("Please enter your email.");
-  if (!password || password.length < 6) {
-    return setError("Password must be at least 6 characters.");
-  }
-
-  try {
-    setLoading(true);
-
-    const { data, error } = await signUpCustomer(em, password);
-
-    if (error) {
-      setError(error.message);
-      return;
+    if (!em) return setError("Please enter your email.");
+    if (!password || password.length < 6) {
+      return setError("Password must be at least 6 characters.");
     }
 
-    if (!data.user?.email) {
-      setError("Signup failed. No user returned.");
-      return;
+    try {
+      setLoading(true);
+
+      const { data, error } = await signUpCustomer(em, password);
+
+      if (error) {
+        setError(error.message);
+        return;
+      }
+
+      if (!data.user?.email) {
+        setError("Signup failed. No user returned.");
+        return;
+      }
+
+      await upsertProfile({
+        id: data.user.id,
+        email: data.user.email,
+        name: data.user.email.split("@")[0],
+        role: "customer",
+        barber_id: null,
+      });
+
+      signIn({
+        email: data.user.email,
+        role: "customer",
+        name: data.user.user_metadata?.name || data.user.email.split("@")[0] || "Customer",
+      });
+
+      router.replace(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Signup failed.");
+    } finally {
+      setLoading(false);
     }
-
-    await upsertProfile({
-      id: data.user.id,
-      email: data.user.email,
-      name: data.user.email.split("@")[0],
-      role: "customer",
-      barber_id: null,
-    });
-
-    signIn({
-      email: data.user.email,
-      role: "customer",
-      name:
-        data.user.user_metadata?.name ||
-        data.user.email.split("@")[0] ||
-        "Customer",
-    });
-
-    router.replace(next);
-  } catch (err: any) {
-    setError(err?.message ?? "Signup failed.");
-  } finally {
-    setLoading(false);
   }
-}
 
   return (
-    <WebShell title="Create account" subtitle="Join Cutato and book in seconds.">
+    <WebShell>
       <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1.05fr_0.95fr]">
         <section className="relative overflow-hidden rounded-[36px] bg-neutral-950 p-8 text-white shadow-[0_24px_80px_rgba(0,0,0,0.18)] md:p-10">
           <div className="absolute right-[-120px] top-[-120px] h-80 w-80 rounded-full bg-[#ff355d]/30 blur-3xl" />
@@ -118,13 +108,12 @@ function SignupPageInner() {
               </h2>
 
               <p className="mt-5 max-w-xl text-base leading-7 text-white/60">
-                Real availability, transparent pricing and easy booking in one
-                smooth experience.
+                Real availability, transparent pricing and easy booking in one smooth experience.
               </p>
             </div>
 
             <div className="mt-10 grid gap-3 sm:grid-cols-3">
-              <MiniInfo icon={<Star size={17} />} title="4.8★" text="avg rating" />
+              <MiniInfo icon={<Star size={17} />} title="Top-rated" text="salons" />
               <MiniInfo icon={<CalendarCheck size={17} />} title="Instant" text="confirmation" />
               <MiniInfo icon={<Scissors size={17} />} title="Easy" text="reschedule" />
             </div>
@@ -137,9 +126,7 @@ function SignupPageInner() {
               Customer signup
             </p>
 
-            <h1 className="mt-3 text-4xl font-black tracking-[-0.05em]">
-              Create your account
-            </h1>
+            <h1 className="mt-3 text-4xl font-black tracking-[-0.05em]">Create your account</h1>
 
             <p className="mt-3 text-sm text-neutral-500">
               Already have an account?{" "}
@@ -174,9 +161,7 @@ function SignupPageInner() {
                 autoComplete="new-password"
                 className="h-14 rounded-2xl border border-black/10 bg-neutral-50 px-5 text-sm font-semibold outline-none transition focus:border-[#ff355d] focus:bg-white"
               />
-              <p className="text-xs font-bold text-neutral-400">
-                Minimum 6 characters.
-              </p>
+              <p className="text-xs font-bold text-neutral-400">Minimum 6 characters.</p>
             </div>
 
             <label className="flex items-center gap-2 text-sm font-bold text-neutral-500">
@@ -208,8 +193,8 @@ function SignupPageInner() {
               <div className="flex gap-3">
                 <CheckCircle2 className="mt-0.5 text-[#ff355d]" size={19} />
                 <p className="text-sm leading-6 text-neutral-500">
-                  By continuing, you agree to Cutato’s Terms and Privacy Policy.
-                  This is currently a demo authentication flow.
+                  By continuing, you agree to Cutato’s Terms and Privacy Policy. This is currently a
+                  demo authentication flow.
                 </p>
               </div>
             </div>
@@ -222,7 +207,7 @@ function SignupPageInner() {
 
 function SignupLoading() {
   return (
-    <WebShell title="Create account" subtitle="Loading signup page...">
+    <WebShell>
       <div className="mx-auto max-w-3xl rounded-[32px] border border-black/10 bg-white p-8 shadow-sm">
         <div className="font-black">Loading signup page...</div>
       </div>
@@ -230,20 +215,10 @@ function SignupLoading() {
   );
 }
 
-function MiniInfo({
-  icon,
-  title,
-  text,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  text: string;
-}) {
+function MiniInfo({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
   return (
     <div className="rounded-[24px] border border-white/10 bg-white/10 p-4 backdrop-blur">
-      <div className="mb-3 inline-flex rounded-xl bg-[#ff355d] p-2 text-white">
-        {icon}
-      </div>
+      <div className="mb-3 inline-flex rounded-xl bg-[#ff355d] p-2 text-white">{icon}</div>
       <p className="font-black">{title}</p>
       <p className="mt-1 text-xs font-bold text-white/50">{text}</p>
     </div>

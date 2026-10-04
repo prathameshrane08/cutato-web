@@ -16,10 +16,7 @@ function formatTime(time: string): string {
   return `${hour}:${minute} ${suffix}`;
 }
 
-export function buildConversationReply(
-  plan: BookingPlan
-): string {
-
+export function buildConversationReply(plan: BookingPlan): string {
   //--------------------------------------------------
   // Missing Information
   //--------------------------------------------------
@@ -45,12 +42,9 @@ export function buildConversationReply(
   //--------------------------------------------------
 
   if (!plan.available) {
-
-    let message =
-      `Unfortunately ${plan.barber?.name ?? "the barber"} is unavailable at ${formatTime(plan.time!)}.\n\n`;
+    let message = `Unfortunately ${plan.barber?.name ?? "the barber"} is unavailable at ${formatTime(plan.time!)}.\n\n`;
 
     if (plan.suggestedSlots.length > 0) {
-
       message += "Here are the closest available times:\n\n";
 
       for (const slot of plan.suggestedSlots) {
@@ -59,14 +53,10 @@ export function buildConversationReply(
 
       message += "\nWhich one would you like?";
     } else {
-
-      message +=
-        "There are no available slots for this day. Please choose another day.";
-
+      message += "There are no available slots for this day. Please choose another day.";
     }
 
     return message;
-
   }
 
   //--------------------------------------------------
@@ -88,5 +78,4 @@ Everything looks good.
 
 I'll prepare your booking now.
 `.trim();
-
 }

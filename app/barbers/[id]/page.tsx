@@ -3,14 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import {
-  CalendarDays,
-  Clock,
-  MapPin,
-  Scissors,
-  Sparkles,
-  Star,
-} from "lucide-react";
+import { CalendarDays, Clock, MapPin, Scissors, Sparkles, Star } from "lucide-react";
 
 import WebShell from "@/app/Components/WebShell";
 import MapCard from "@/app/Components/MapCard";
@@ -20,6 +13,7 @@ import { servicesForBarberStore, type Service } from "@/app/lib/servicesStore";
 import { generateSlotsForDate } from "@/app/lib/availabilityStore";
 import { readSalonSettings } from "@/app/lib/salonSettingsStore";
 import { fmtMoney } from "@/app/lib/formatters";
+import { calcDynamicPriceEuro, demandForTime, demandLabel } from "@/app/lib/pricing";
 
 function dayKey(d: Date) {
   const yyyy = d.getFullYear();
@@ -42,24 +36,6 @@ function prettyDayLabel(yyyyMmDd: string) {
     day: "2-digit",
     month: "short",
   });
-}
-
-function demandForTime(time: string): "quiet" | "normal" | "busy" {
-  const [h] = time.split(":").map(Number);
-  if (h >= 17) return "busy";
-  if (h < 11) return "quiet";
-  return "normal";
-}
-
-function demandLabel(d: "quiet" | "normal" | "busy") {
-  if (d === "busy") return "Busy";
-  if (d === "quiet") return "Quiet";
-  return "Normal";
-}
-
-function calcDynamicPriceEuro(baseEuro: number, demand: "quiet" | "normal" | "busy") {
-  const mult = demand === "busy" ? 1.2 : demand === "quiet" ? 0.85 : 1;
-  return Math.round(baseEuro * mult * 100) / 100;
 }
 
 function buildBookingHref({
@@ -248,11 +224,10 @@ export default function BarberProfilePage() {
                   <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ff355d]">
                     Your selected hairstyle
                   </p>
-                  <h2 className="mt-1 text-2xl font-black text-neutral-950">
-                    {selectedHairstyle}
-                  </h2>
+                  <h2 className="mt-1 text-2xl font-black text-neutral-950">{selectedHairstyle}</h2>
                   <p className="mt-1 text-sm leading-6 text-neutral-500">
-                    Choose a service or time with {barber.name}. We’ll keep this hairstyle attached to your booking.
+                    Choose a service or time with {barber.name}. We’ll keep this hairstyle attached
+                    to your booking.
                   </p>
                 </div>
               </div>
@@ -299,14 +274,10 @@ export default function BarberProfilePage() {
               </div>
 
               {barber.tagline ? (
-                <p className="mt-5 max-w-2xl text-lg font-bold text-white/80">
-                  {barber.tagline}
-                </p>
+                <p className="mt-5 max-w-2xl text-lg font-bold text-white/80">{barber.tagline}</p>
               ) : null}
 
-              <p className="mt-4 max-w-2xl text-sm leading-6 text-white/50">
-                {barber.address}
-              </p>
+              <p className="mt-4 max-w-2xl text-sm leading-6 text-white/50">{barber.address}</p>
             </div>
 
             <div className="rounded-[30px] border border-white/10 bg-white/10 p-6 backdrop-blur">
@@ -339,17 +310,12 @@ export default function BarberProfilePage() {
             {barber.about ? (
               <section className="rounded-[34px] border border-black/10 bg-white p-6 shadow-sm md:p-8">
                 <SectionTitle title="About" subtitle="A quick introduction" />
-                <p className="mt-5 max-w-3xl leading-7 text-neutral-500">
-                  {barber.about}
-                </p>
+                <p className="mt-5 max-w-3xl leading-7 text-neutral-500">{barber.about}</p>
               </section>
             ) : null}
 
             <section className="rounded-[34px] border border-black/10 bg-white p-6 shadow-sm md:p-8">
-              <SectionTitle
-                title="Services"
-                subtitle="Services assigned to this barber"
-              />
+              <SectionTitle title="Services" subtitle="Services assigned to this barber" />
 
               {services.length === 0 ? (
                 <p className="mt-5 text-neutral-500">No services available yet.</p>
@@ -431,21 +397,11 @@ export default function BarberProfilePage() {
   );
 }
 
-function SectionTitle({
-  title,
-  subtitle,
-}: {
-  title: string;
-  subtitle: string;
-}) {
+function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div>
-      <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">
-        {title}
-      </p>
-      <h2 className="mt-2 text-3xl font-black tracking-[-0.04em]">
-        {subtitle}
-      </h2>
+      <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">{title}</p>
+      <h2 className="mt-2 text-3xl font-black tracking-[-0.04em]">{subtitle}</h2>
     </div>
   );
 }
@@ -486,9 +442,7 @@ function ServiceCard({
         </div>
 
         <div className="text-left sm:text-right">
-          <p className="text-2xl font-black">
-            {fmtMoney(service.basePriceEuro, currency)}
-          </p>
+          <p className="text-2xl font-black">{fmtMoney(service.basePriceEuro, currency)}</p>
 
           <Link
             href={buildBookingHref({
@@ -575,17 +529,13 @@ function AvailabilityBlock({
   );
 }
 
-function DemandPill({
-  demand,
-}: {
-  demand: "quiet" | "normal" | "busy";
-}) {
+function DemandPill({ demand }: { demand: "quiet" | "normal" | "busy" }) {
   const styles =
     demand === "busy"
       ? "bg-[#ff355d]/10 text-[#ff355d]"
       : demand === "quiet"
-      ? "bg-emerald-100 text-emerald-700"
-      : "bg-neutral-200 text-neutral-600";
+        ? "bg-emerald-100 text-emerald-700"
+        : "bg-neutral-200 text-neutral-600";
 
   return (
     <span className={`inline-flex rounded-full px-3 py-1.5 text-xs font-black ${styles}`}>

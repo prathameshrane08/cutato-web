@@ -12,9 +12,7 @@ export function emitStoreUpdate(key: string) {
   );
 }
 
-export function subscribeStoreUpdates(
-  callback: (info: { key?: string; ts?: number }) => void
-) {
+export function subscribeStoreUpdates(callback: (info: { key?: string; ts?: number }) => void) {
   if (typeof window === "undefined") return () => {};
 
   const customHandler = (event: Event) => {

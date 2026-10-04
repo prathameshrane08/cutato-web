@@ -3,7 +3,6 @@
 import { emitStoreUpdate } from "@/app/lib/storeEvents";
 import { supabase } from "@/app/lib/supabase";
 
-
 export type ServiceCategory = "Hair" | "Beard" | "Combo" | "Color" | "Other";
 
 export type Service = {
@@ -267,10 +266,11 @@ export async function upsertServiceToSupabase(service: Service): Promise<void> {
 }
 
 export async function deleteServiceFromSupabase(serviceId: string): Promise<void> {
+  const safeId = serviceId.replace(/[^\w-]/g, "");
   const { error } = await supabase
     .from("services")
     .delete()
-    .or(`id.eq.${serviceId},id.like.${serviceId}_%`);
+    .or(`id.eq.${safeId},id.like.${safeId}_%`);
 
   if (error) throw error;
 }

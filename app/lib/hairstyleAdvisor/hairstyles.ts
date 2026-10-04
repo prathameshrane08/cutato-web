@@ -8,12 +8,7 @@ import type {
 } from "./types";
 
 export type HairstyleCategory =
-  | "fade"
-  | "classic"
-  | "modern"
-  | "long"
-  | "low-maintenance"
-  | "curly";
+  "fade" | "classic" | "modern" | "long" | "low-maintenance" | "curly";
 
 export type Hairstyle = {
   id: string;
@@ -54,22 +49,11 @@ export const HAIRSTYLES: Hairstyle[] = [
       "A clean low taper combined with natural texture on top. It works for both casual and professional settings.",
     image: "/hairstyles/low-taper-textured-top.webp",
 
-    suitableFaceShapes: [
-      "oval",
-      "round",
-      "square",
-      "diamond",
-      "heart",
-    ],
+    suitableFaceShapes: ["oval", "round", "square", "diamond", "heart"],
     suitableHairTextures: ["straight", "wavy", "curly"],
     suitableHairThickness: ["medium", "thick"],
     suitableHairLengths: ["short", "medium"],
-    suitableLooks: [
-      "professional",
-      "modern",
-      "casual",
-      "low-maintenance",
-    ],
+    suitableLooks: ["professional", "modern", "casual", "low-maintenance"],
     suitableStylingEffort: ["under-5", "five-to-ten"],
 
     maintenance: "low",
@@ -77,12 +61,10 @@ export const HAIRSTYLES: Hairstyle[] = [
     trendScore: 98,
     professionalScore: 95,
 
-    topLength:
-      "Keep approximately 7–10 cm on top and leave the front slightly longer.",
+    topLength: "Keep approximately 7–10 cm on top and leave the front slightly longer.",
     sideInstructions:
       "Ask for a low taper starting around guard 0.5, blended gradually into guards 1 and 2.",
-    backInstructions:
-      "Keep a natural low taper around the neckline with a smooth blend.",
+    backInstructions: "Keep a natural low taper around the neckline with a smooth blend.",
     barberInstructions:
       "I would like a low taper fade with a textured top. Keep around 7–10 cm on top, leave the front slightly longer, and add texture using scissors. Start the taper low around the sideburns and neckline. Please do not take the fade too high.",
 
@@ -105,8 +87,7 @@ export const HAIRSTYLES: Hairstyle[] = [
     id: "modern-curtains",
     name: "Modern Curtains",
     category: "modern",
-    description:
-      "A relaxed middle-part hairstyle with soft movement on both sides of the face.",
+    description: "A relaxed middle-part hairstyle with soft movement on both sides of the face.",
     image: "/hairstyles/modern-curtains.webp",
 
     suitableFaceShapes: ["oval", "diamond", "heart", "oblong"],
@@ -121,12 +102,10 @@ export const HAIRSTYLES: Hairstyle[] = [
     trendScore: 96,
     professionalScore: 75,
 
-    topLength:
-      "Keep approximately 12–18 cm on top with enough length for a natural middle part.",
+    topLength: "Keep approximately 12–18 cm on top with enough length for a natural middle part.",
     sideInstructions:
       "Keep the sides scissor-cut or use a very soft taper without exposing too much skin.",
-    backInstructions:
-      "Keep some length at the back and blend it naturally into the sides.",
+    backInstructions: "Keep some length at the back and blend it naturally into the sides.",
     barberInstructions:
       "I would like modern curtains with a natural middle part. Keep enough length on top for movement, add soft layers, and avoid removing too much weight from the front. Keep the sides natural with a soft taper.",
 
@@ -158,12 +137,7 @@ export const HAIRSTYLES: Hairstyle[] = [
     suitableHairTextures: ["straight", "wavy", "curly"],
     suitableHairThickness: ["thin", "medium", "thick"],
     suitableHairLengths: ["very-short", "short"],
-    suitableLooks: [
-      "professional",
-      "modern",
-      "casual",
-      "low-maintenance",
-    ],
+    suitableLooks: ["professional", "modern", "casual", "low-maintenance"],
     suitableStylingEffort: ["none", "under-5"],
 
     maintenance: "low",
@@ -171,12 +145,9 @@ export const HAIRSTYLES: Hairstyle[] = [
     trendScore: 90,
     professionalScore: 90,
 
-    topLength:
-      "Keep approximately 3–5 cm on top with visible texture.",
-    sideInstructions:
-      "Use a low or mid fade, depending on how much contrast you prefer.",
-    backInstructions:
-      "Blend the back into the fade and keep the neckline clean.",
+    topLength: "Keep approximately 3–5 cm on top with visible texture.",
+    sideInstructions: "Use a low or mid fade, depending on how much contrast you prefer.",
+    backInstructions: "Blend the back into the fade and keep the neckline clean.",
     barberInstructions:
       "I would like a French crop with approximately 3–5 cm on top. Add texture with scissors and keep a short natural fringe at the front. Use a low fade on the sides and blend the back cleanly.",
 
@@ -188,10 +159,7 @@ export const HAIRSTYLES: Hairstyle[] = [
       "Apply a small amount of matte paste or texture powder.",
       "Use your fingers to create separation and texture.",
     ],
-    avoidIf: [
-      "You want a long, flowing hairstyle.",
-      "You strongly prefer slick or shiny styling.",
-    ],
+    avoidIf: ["You want a long, flowing hairstyle.", "You strongly prefer slick or shiny styling."],
   },
 
   {
@@ -214,12 +182,9 @@ export const HAIRSTYLES: Hairstyle[] = [
     trendScore: 82,
     professionalScore: 100,
 
-    topLength:
-      "Keep approximately 7–10 cm on top with enough length to create a clean side part.",
-    sideInstructions:
-      "Ask for a classic taper instead of a very high skin fade.",
-    backInstructions:
-      "Keep the neckline naturally tapered and neatly blended.",
+    topLength: "Keep approximately 7–10 cm on top with enough length to create a clean side part.",
+    sideInstructions: "Ask for a classic taper instead of a very high skin fade.",
+    backInstructions: "Keep the neckline naturally tapered and neatly blended.",
     barberInstructions:
       "I would like a classic side part with a natural taper. Keep approximately 7–10 cm on top, maintain enough weight for the part, and blend the sides gradually. Please keep the finish clean and professional.",
 
@@ -242,8 +207,7 @@ export const HAIRSTYLES: Hairstyle[] = [
     id: "messy-quiff",
     name: "Messy Quiff + Mid Fade",
     category: "modern",
-    description:
-      "A textured hairstyle with moderate height at the front and clean faded sides.",
+    description: "A textured hairstyle with moderate height at the front and clean faded sides.",
     image: "/hairstyles/messy-quiff.webp",
 
     suitableFaceShapes: ["oval", "round", "square", "heart"],
@@ -258,17 +222,13 @@ export const HAIRSTYLES: Hairstyle[] = [
     trendScore: 93,
     professionalScore: 75,
 
-    topLength:
-      "Keep approximately 8–12 cm on top, with extra length near the front.",
-    sideInstructions:
-      "Ask for a mid fade blended smoothly into the longer top.",
-    backInstructions:
-      "Fade the back consistently and keep the transition soft.",
+    topLength: "Keep approximately 8–12 cm on top, with extra length near the front.",
+    sideInstructions: "Ask for a mid fade blended smoothly into the longer top.",
+    backInstructions: "Fade the back consistently and keep the transition soft.",
     barberInstructions:
       "I would like a messy textured quiff with a mid fade. Keep around 8–12 cm on top with additional length at the front. Add texture using scissors and blend the sides smoothly without creating a hard disconnect.",
 
-    beardRecommendation:
-      "Light stubble or a short boxed beard balances the height of the quiff.",
+    beardRecommendation: "Light stubble or a short boxed beard balances the height of the quiff.",
     stylingProducts: ["Pre-styling spray", "Matte clay"],
     stylingSteps: [
       "Apply pre-styling spray to damp hair.",
@@ -287,17 +247,11 @@ export const HAIRSTYLES: Hairstyle[] = [
     id: "buzz-cut",
     name: "Buzz Cut",
     category: "low-maintenance",
-    description:
-      "A very short, clean hairstyle requiring almost no daily styling.",
+    description: "A very short, clean hairstyle requiring almost no daily styling.",
     image: "/hairstyles/buzz-cut.webp",
 
     suitableFaceShapes: ["oval", "square", "diamond"],
-    suitableHairTextures: [
-      "straight",
-      "wavy",
-      "curly",
-      "coily",
-    ],
+    suitableHairTextures: ["straight", "wavy", "curly", "coily"],
     suitableHairThickness: ["thin", "medium", "thick"],
     suitableHairLengths: ["very-short", "short"],
     suitableLooks: ["professional", "bold", "low-maintenance"],
@@ -308,17 +262,13 @@ export const HAIRSTYLES: Hairstyle[] = [
     trendScore: 84,
     professionalScore: 85,
 
-    topLength:
-      "Use one consistent clipper guard or keep the top slightly longer than the sides.",
-    sideInstructions:
-      "Use guards 0.5–2 depending on how short you want the haircut.",
-    backInstructions:
-      "Keep the back evenly clipped and clean around the neckline.",
+    topLength: "Use one consistent clipper guard or keep the top slightly longer than the sides.",
+    sideInstructions: "Use guards 0.5–2 depending on how short you want the haircut.",
+    backInstructions: "Keep the back evenly clipped and clean around the neckline.",
     barberInstructions:
       "I would like a clean buzz cut. Keep the top slightly longer than the sides, using a consistent blend. Please clean the edges naturally and avoid making the hairline look overly sharp.",
 
-    beardRecommendation:
-      "A short beard or defined stubble can add structure and contrast.",
+    beardRecommendation: "A short beard or defined stubble can add structure and contrast.",
     stylingProducts: [],
     stylingSteps: [
       "No daily styling is required.",
@@ -350,12 +300,9 @@ export const HAIRSTYLES: Hairstyle[] = [
     trendScore: 86,
     professionalScore: 94,
 
-    topLength:
-      "Keep approximately 10–15 cm on top so the hair can be directed backward.",
-    sideInstructions:
-      "Ask for a natural taper or low taper rather than an aggressive high fade.",
-    backInstructions:
-      "Keep enough length for a smooth transition into the top.",
+    topLength: "Keep approximately 10–15 cm on top so the hair can be directed backward.",
+    sideInstructions: "Ask for a natural taper or low taper rather than an aggressive high fade.",
+    backInstructions: "Keep enough length for a smooth transition into the top.",
     barberInstructions:
       "I would like a slick back with a natural taper. Keep approximately 10–15 cm on top and enough weight for the hair to move backward. Blend the sides cleanly without taking them too short.",
 
@@ -379,17 +326,10 @@ export const HAIRSTYLES: Hairstyle[] = [
     id: "curly-taper-fade",
     name: "Curly Taper Fade",
     category: "curly",
-    description:
-      "A clean taper that keeps and defines natural curls on the top.",
+    description: "A clean taper that keeps and defines natural curls on the top.",
     image: "/hairstyles/curly-taper-fade.webp",
 
-    suitableFaceShapes: [
-      "oval",
-      "round",
-      "square",
-      "diamond",
-      "heart",
-    ],
+    suitableFaceShapes: ["oval", "round", "square", "diamond", "heart"],
     suitableHairTextures: ["curly", "coily"],
     suitableHairThickness: ["medium", "thick"],
     suitableHairLengths: ["short", "medium"],
@@ -401,12 +341,10 @@ export const HAIRSTYLES: Hairstyle[] = [
     trendScore: 95,
     professionalScore: 85,
 
-    topLength:
-      "Keep approximately 5–10 cm on top, depending on your curl pattern.",
+    topLength: "Keep approximately 5–10 cm on top, depending on your curl pattern.",
     sideInstructions:
       "Ask for a low taper around the temples and sideburns while preserving the curls.",
-    backInstructions:
-      "Taper the neckline cleanly without taking the fade too high.",
+    backInstructions: "Taper the neckline cleanly without taking the fade too high.",
     barberInstructions:
       "I would like a curly taper fade. Keep my natural curls on top with approximately 5–10 cm of length. Clean the temples, sideburns, and neckline with a low taper. Please avoid cutting the curls too short or thinning them excessively.",
 
@@ -419,9 +357,6 @@ export const HAIRSTYLES: Hairstyle[] = [
       "Scrunch the curls gently using your hands.",
       "Allow the hair to air-dry or use a diffuser.",
     ],
-    avoidIf: [
-      "Your hair is naturally completely straight.",
-      "You regularly brush out your curls.",
-    ],
+    avoidIf: ["Your hair is naturally completely straight.", "You regularly brush out your curls."],
   },
 ];

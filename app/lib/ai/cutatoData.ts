@@ -26,34 +26,24 @@ export type AIService = {
   active: boolean;
 };
 
-const supabaseUrl =
-  process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 
-const supabaseAnonKey =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 function getSupabaseClient() {
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error(
-      "Supabase environment variables are missing."
-    );
+    throw new Error("Supabase environment variables are missing.");
   }
 
-  return createClient(
-    supabaseUrl,
-    supabaseAnonKey,
-    {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    }
-  );
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
 }
 
-export async function getAIBarbers(): Promise<
-  AIBarber[]
-> {
+export async function getAIBarbers(): Promise<AIBarber[]> {
   const supabase = getSupabaseClient();
 
   const { data, error } = await supabase
@@ -80,10 +70,7 @@ export async function getAIBarbers(): Promise<
     });
 
   if (error) {
-    console.error(
-      "AI BARBERS FETCH ERROR:",
-      error.message
-    );
+    console.error("AI BARBERS FETCH ERROR:", error.message);
 
     throw error;
   }
@@ -91,9 +78,7 @@ export async function getAIBarbers(): Promise<
   return (data ?? []) as AIBarber[];
 }
 
-export async function getAIServices(): Promise<
-  AIService[]
-> {
+export async function getAIServices(): Promise<AIService[]> {
   const supabase = getSupabaseClient();
 
   const { data, error } = await supabase
@@ -116,10 +101,7 @@ export async function getAIServices(): Promise<
     });
 
   if (error) {
-    console.error(
-      "AI SERVICES FETCH ERROR:",
-      error.message
-    );
+    console.error("AI SERVICES FETCH ERROR:", error.message);
 
     throw error;
   }
@@ -128,11 +110,7 @@ export async function getAIServices(): Promise<
 }
 
 export async function getCutatoAIContext() {
-  const [barbers, services] =
-    await Promise.all([
-      getAIBarbers(),
-      getAIServices(),
-    ]);
+  const [barbers, services] = await Promise.all([getAIBarbers(), getAIServices()]);
 
   return {
     barbers,

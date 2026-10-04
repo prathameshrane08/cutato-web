@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import WebShell from "@/app/Components/WebShell";
-import { requireSalonAuth } from "@/app/portal/_lib/portalAuth";
+import PortalShell from "@/app/Components/portal/PortalShell";
+import RoleGate from "@/app/Components/portal/RoleGate";
+import type { AuthUser } from "@/app/Components/auth";
 import { createClient } from "@/app/lib/supabase/client";
+import { toast } from "@/app/lib/toast";
 
 type SalonForm = {
   name: string;
@@ -25,19 +27,15 @@ const EMPTY_FORM: SalonForm = {
 };
 
 export default function SalonSettingsPage() {
-  const auth = requireSalonAuth();
+  return (
+    <RoleGate role="salon" title="Salon Settings">
+      {(user) => <SalonSettingsContent user={user} />}
+    </RoleGate>
+  );
+}
 
-  if (!auth.ok) {
-    return (
-      <WebShell title="Access denied" subtitle="Salon account required.">
-        <div className="mx-auto max-w-4xl rounded-[28px] border border-black/10 bg-white p-8">
-          This page is only available for salon accounts.
-        </div>
-      </WebShell>
-    );
-  }
-
-  const salonId = auth.user.salonId ?? "";
+function SalonSettingsContent({ user }: { user: AuthUser }) {
+  const salonId = user.salonId ?? "";
   const supabase = createClient();
 
   const [form, setForm] = useState<SalonForm>(EMPTY_FORM);
@@ -74,7 +72,7 @@ export default function SalonSettingsPage() {
       setSavedAt(data.updated_at ?? "");
     } catch (error) {
       console.error("Failed to load salon settings:", error);
-      alert("Could not load the current salon profile.");
+      toast.error("Could not load the current salon profile.");
       setForm(EMPTY_FORM);
     } finally {
       setLoading(false);
@@ -94,12 +92,12 @@ export default function SalonSettingsPage() {
 
   async function save() {
     if (!salonId) {
-      alert("Your account is not linked to a salon.");
+      toast.error("Your account is not linked to a salon.");
       return;
     }
 
     if (!form.name.trim()) {
-      alert("Salon name is required.");
+      toast.error("Salon name is required.");
       return;
     }
 
@@ -124,10 +122,10 @@ export default function SalonSettingsPage() {
       if (error) throw error;
 
       setSavedAt(updatedAt);
-      alert("Salon settings saved.");
+      toast.success("Salon settings saved.");
     } catch (error) {
       console.error("Failed to save salon settings:", error);
-      alert(
+      toast.error(
         error && typeof error === "object" && "message" in error
           ? String((error as { message: unknown }).message)
           : "Could not save salon settings."
@@ -138,7 +136,8 @@ export default function SalonSettingsPage() {
   }
 
   return (
-    <WebShell
+    <PortalShell
+      role="salon"
       title="Salon Settings"
       subtitle="These values come from the current salon record in Supabase."
     >
@@ -156,8 +155,8 @@ export default function SalonSettingsPage() {
             </h1>
 
             <p className="mt-3 text-sm leading-6 text-neutral-500">
-              No demo values are loaded here. This page reads the salon created
-              when the application was approved.
+              No demo values are loaded here. This page reads the salon created when the application
+              was approved.
             </p>
 
             {loading ? (
@@ -190,11 +189,7 @@ export default function SalonSettingsPage() {
                   onChange={(value) => patch("phone", value)}
                 />
 
-                <Field
-                  label="City"
-                  value={form.city}
-                  onChange={(value) => patch("city", value)}
-                />
+                <Field label="City" value={form.city} onChange={(value) => patch("city", value)} />
 
                 <Field
                   label="Address"
@@ -226,13 +221,9 @@ export default function SalonSettingsPage() {
           </section>
 
           <aside className="h-fit rounded-[32px] border border-black/10 bg-neutral-950 p-6 text-white shadow-sm">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff355d]">
-              Preview
-            </p>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff355d]">Preview</p>
 
-            <h2 className="mt-3 text-3xl font-black">
-              {form.name || "Unnamed salon"}
-            </h2>
+            <h2 className="mt-3 text-3xl font-black">{form.name || "Unnamed salon"}</h2>
 
             <div className="mt-6 grid gap-4 text-sm">
               <Preview label="Owner" value={form.owner_name || "—"} />
@@ -243,25 +234,33 @@ export default function SalonSettingsPage() {
             </div>
 
             <p className="mt-6 border-t border-white/10 pt-5 text-xs text-white/40">
-              {savedAt
-                ? `Last saved ${new Date(savedAt).toLocaleString()}`
-                : "Not saved yet"}
+              {savedAt ? `Last saved ${new Date(savedAt).toLocaleString()}` : "Not saved yet"}
             </p>
           </aside>
         </div>
       </div>
-    </WebShell>
+    </PortalShell>
   );
 }
 
 function PortalNav() {
   return (
     <div className="flex flex-wrap gap-2">
-      <Link href="/portal/salon" className="btn btn-secondary">← Dashboard</Link>
-      <Link href="/portal/salon/bookings" className="btn btn-secondary">Bookings</Link>
-      <Link href="/portal/salon/staff" className="btn btn-secondary">Staff</Link>
-      <Link href="/portal/salon/services" className="btn btn-secondary">Services</Link>
-      <Link href="/portal/salon/availability" className="btn btn-secondary">Availability</Link>
+      <Link href="/portal/salon" className="btn btn-secondary">
+        ← Dashboard
+      </Link>
+      <Link href="/portal/salon/bookings" className="btn btn-secondary">
+        Bookings
+      </Link>
+      <Link href="/portal/salon/staff" className="btn btn-secondary">
+        Staff
+      </Link>
+      <Link href="/portal/salon/services" className="btn btn-secondary">
+        Services
+      </Link>
+      <Link href="/portal/salon/availability" className="btn btn-secondary">
+        Availability
+      </Link>
     </div>
   );
 }
@@ -290,9 +289,7 @@ function Field({
 function Preview({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs font-black uppercase tracking-wide text-white/35">
-        {label}
-      </p>
+      <p className="text-xs font-black uppercase tracking-wide text-white/35">{label}</p>
       <p className="mt-1 font-bold text-white/85">{value}</p>
     </div>
   );

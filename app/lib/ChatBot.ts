@@ -19,9 +19,7 @@ export type LocalChatReply = {
 };
 
 function createId(prefix: string) {
-  return `${prefix}_${Math.random()
-    .toString(16)
-    .slice(2)}_${Date.now().toString(16)}`;
+  return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
 }
 
 function normalize(text: string) {
@@ -32,13 +30,8 @@ function normalize(text: string) {
     .trim();
 }
 
-function includesAny(
-  text: string,
-  phrases: string[]
-) {
-  return phrases.some((phrase) =>
-    text.includes(phrase)
-  );
+function includesAny(text: string, phrases: string[]) {
+  return phrases.some((phrase) => text.includes(phrase));
 }
 
 function isGreeting(text: string) {
@@ -80,11 +73,7 @@ function isBookingsPageRequest(text: string) {
 }
 
 function isCancelRequest(text: string) {
-  return includesAny(text, [
-    "cancel booking",
-    "cancel appointment",
-    "delete booking",
-  ]);
+  return includesAny(text, ["cancel booking", "cancel appointment", "delete booking"]);
 }
 
 function isRescheduleRequest(text: string) {
@@ -97,14 +86,7 @@ function isRescheduleRequest(text: string) {
 }
 
 function isPaymentQuestion(text: string) {
-  return includesAny(text, [
-    "payment",
-    "pay online",
-    "pay at salon",
-    "card",
-    "cash",
-    "refund",
-  ]);
+  return includesAny(text, ["payment", "pay online", "pay at salon", "card", "cash", "refund"]);
 }
 
 function isServiceQuestion(text: string) {
@@ -118,27 +100,14 @@ function isServiceQuestion(text: string) {
 }
 
 function isPriceQuestion(text: string) {
-  return includesAny(text, [
-    "price",
-    "cost",
-    "how much",
-    "cheapest",
-    "expensive",
-  ]);
+  return includesAny(text, ["price", "cost", "how much", "cheapest", "expensive"]);
 }
 
 function isFadeQuestion(text: string) {
-  return includesAny(text, [
-    "what is a fade",
-    "fade haircut",
-    "skin fade",
-    "taper fade",
-  ]);
+  return includesAny(text, ["what is a fade", "fade haircut", "skin fade", "taper fade"]);
 }
 
-function isHairstyleAdvisorRequest(
-  text: string
-) {
+function isHairstyleAdvisorRequest(text: string) {
   return includesAny(text, [
     "suggest me a hairstyle",
     "suggest a hairstyle",
@@ -173,11 +142,7 @@ function isImageQuestion(text: string) {
 }
 
 function isBarberPortalRequest(text: string) {
-  return includesAny(text, [
-    "barber portal",
-    "open barber dashboard",
-    "barber dashboard",
-  ]);
+  return includesAny(text, ["barber portal", "open barber dashboard", "barber dashboard"]);
 }
 
 function isSalonPortalRequest(text: string) {
@@ -203,8 +168,7 @@ export function getWelcomeMessage(): ChatMessage {
   return {
     id: createId("bot"),
     role: "bot",
-    text:
-      "Hi! I’m the Cutato Assistant. I can help you find a barber, choose a hairstyle, understand services, check booking options, and manage appointments.",
+    text: "Hi! I’m the Cutato Assistant. I can help you find a barber, choose a hairstyle, understand services, check booking options, and manage appointments.",
     createdAt: new Date().toISOString(),
   };
 }
@@ -234,9 +198,7 @@ export function getDefaultQuickActions(): QuickAction[] {
   ];
 }
 
-export async function replyToChatTry(
-  input: string
-): Promise<LocalChatReply | null> {
+export async function replyToChatTry(input: string): Promise<LocalChatReply | null> {
   const text = normalize(input);
 
   if (!text) {
@@ -247,125 +209,108 @@ export async function replyToChatTry(
 
   if (isGreeting(text)) {
     return {
-      text:
-        "Hello! I can help you find a barber, choose a hairstyle, select a service, or start a booking.",
+      text: "Hello! I can help you find a barber, choose a hairstyle, select a service, or start a booking.",
     };
   }
 
   if (isHairstyleAdvisorRequest(text)) {
     return {
-      text:
-        [
-          "✨ I can help you find a hairstyle that suits you.",
-          "",
-          "The Cutato Hairstyle Advisor can recommend styles based on your face shape, hair texture, thickness, current length, styling preferences, and facial hair.",
-          "",
-          "You can also upload a photo inside the advisor for AI-assisted analysis.",
-          "",
-          "Opening the Hairstyle Advisor now.",
-          "OPEN_HAIRSTYLE_ADVISOR",
-        ].join("\n"),
+      text: [
+        "✨ I can help you find a hairstyle that suits you.",
+        "",
+        "The Cutato Hairstyle Advisor can recommend styles based on your face shape, hair texture, thickness, current length, styling preferences, and facial hair.",
+        "",
+        "You can also upload a photo inside the advisor for AI-assisted analysis.",
+        "",
+        "Opening the Hairstyle Advisor now.",
+        "OPEN_HAIRSTYLE_ADVISOR",
+      ].join("\n"),
     };
   }
 
   if (isBookingsPageRequest(text)) {
     return {
-      text:
-        "Opening your bookings now.\nOPEN_BOOKINGS",
+      text: "Opening your bookings now.\nOPEN_BOOKINGS",
     };
   }
 
   if (isBarberPortalRequest(text)) {
     return {
-      text:
-        "Opening the barber portal.\nOPEN_BARBER_PORTAL",
+      text: "Opening the barber portal.\nOPEN_BARBER_PORTAL",
     };
   }
 
   if (isSalonPortalRequest(text)) {
     return {
-      text:
-        "Opening the salon portal.\nOPEN_SALON_PORTAL",
+      text: "Opening the salon portal.\nOPEN_SALON_PORTAL",
     };
   }
 
   if (isHomeRequest(text)) {
     return {
-      text:
-        "Opening the barber list.\nOPEN_HOME",
+      text: "Opening the barber list.\nOPEN_HOME",
     };
   }
 
   if (isBookingRequest(text)) {
     return {
-      text:
-        "I’ll help you start a booking and select the best available barber, service, date, and time.\nBOOKING_INTENT",
+      text: "I’ll help you start a booking and select the best available barber, service, date, and time.\nBOOKING_INTENT",
     };
   }
 
   if (isCancelRequest(text)) {
     return {
-      text:
-        "Open **My Bookings**, select the appointment, and choose **Cancel booking**. Your booking remains visible until the cancellation is confirmed.\nOPEN_BOOKINGS",
+      text: "Open **My Bookings**, select the appointment, and choose **Cancel booking**. Your booking remains visible until the cancellation is confirmed.\nOPEN_BOOKINGS",
     };
   }
 
   if (isRescheduleRequest(text)) {
     return {
-      text:
-        "Open **My Bookings**, choose the appointment, and select **Reschedule** to pick a new date and time.\nOPEN_BOOKINGS",
+      text: "Open **My Bookings**, choose the appointment, and select **Reschedule** to pick a new date and time.\nOPEN_BOOKINGS",
     };
   }
 
   if (isPaymentQuestion(text)) {
     return {
-      text:
-        "Cutato can support online payment or payment at the salon, depending on the booking options shown during checkout. Review the selected method before confirming.",
+      text: "Cutato can support online payment or payment at the salon, depending on the booking options shown during checkout. Review the selected method before confirming.",
     };
   }
 
   if (isFadeQuestion(text)) {
     return {
-      text:
-        "A **fade haircut** gradually changes from very short hair near the sides and back to longer hair higher up. Common options include low, mid, high, taper, and skin fades.",
+      text: "A **fade haircut** gradually changes from very short hair near the sides and back to longer hair higher up. Common options include low, mid, high, taper, and skin fades.",
     };
   }
 
   if (isImageQuestion(text)) {
     return {
-      text:
-        [
-          "You can upload an image here for general image questions.",
-          "",
-          "For a full hairstyle recommendation based on your face and hair, use the Cutato Hairstyle Advisor.",
-          "",
-          "Opening it now.",
-          "OPEN_HAIRSTYLE_ADVISOR",
-        ].join("\n"),
+      text: [
+        "You can upload an image here for general image questions.",
+        "",
+        "For a full hairstyle recommendation based on your face and hair, use the Cutato Hairstyle Advisor.",
+        "",
+        "Opening it now.",
+        "OPEN_HAIRSTYLE_ADVISOR",
+      ].join("\n"),
     };
   }
 
   if (isServiceQuestion(text)) {
     return {
-      text:
-        "Cutato commonly includes services such as haircuts, fades, beard trims, haircut-and-beard combinations, colouring, and other barber-specific services. Live availability and prices depend on the selected barber.",
+      text: "Cutato commonly includes services such as haircuts, fades, beard trims, haircut-and-beard combinations, colouring, and other barber-specific services. Live availability and prices depend on the selected barber.",
     };
   }
 
   if (isPriceQuestion(text)) {
     return {
-      text:
-        "Prices depend on the barber and service. Open a barber profile to see the current service prices, durations, and availability.",
+      text: "Prices depend on the barber and service. Open a barber profile to see the current service prices, durations, and availability.",
     };
   }
 
   return null;
 }
 
-
-export function replyToChat(
-  input: string
-): string {
+export function replyToChat(input: string): string {
   const text = normalize(input);
 
   if (!text) {

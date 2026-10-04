@@ -3,10 +3,7 @@ import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-import {
-  sendBarberNewBookingEmail,
-  sendBookingConfirmationEmail,
-} from "@/app/lib/email";
+import { sendBarberNewBookingEmail, sendBookingConfirmationEmail } from "@/app/lib/email";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
@@ -22,23 +19,17 @@ export async function POST(req: Request) {
     const sig = (await headers()).get("stripe-signature");
 
     if (!sig) {
-      return NextResponse.json(
-        { error: "Missing stripe signature" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing stripe signature" }, { status: 400 });
     }
 
     let event: Stripe.Event;
 
     try {
       event = stripe.webhooks.constructEvent(body, sig, endpointSecret);
-    } catch (err: any) {
-      console.error("WEBHOOK VERIFY ERROR:", err.message);
+    } catch (err) {
+      console.error("WEBHOOK VERIFY ERROR:", err);
 
-      return NextResponse.json(
-        { error: "Invalid webhook signature" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid webhook signature" }, { status: 400 });
     }
 
     if (event.type === "checkout.session.completed") {
@@ -66,10 +57,7 @@ export async function POST(req: Request) {
       if (updateError) {
         console.error("BOOKING UPDATE ERROR:", updateError);
 
-        return NextResponse.json(
-          { error: "Booking update failed" },
-          { status: 500 }
-        );
+        return NextResponse.json({ error: "Booking update failed" }, { status: 500 });
       }
 
       console.log("BOOKING CONFIRMED:", bookingId);
@@ -97,11 +85,9 @@ export async function POST(req: Request) {
         booking.assignedBarberId ||
         "";
 
-      const barberName =
-        booking.barber_name || booking.barberName || "Your barber";
+      const barberName = booking.barber_name || booking.barberName || "Your barber";
 
-      const serviceName =
-        booking.service_name || booking.serviceName || "Your service";
+      const serviceName = booking.service_name || booking.serviceName || "Your service";
 
       const totalEuro = Number(
         booking.total_euro ?? booking.totalEuro ?? booking.service_price_euro ?? 0
@@ -157,12 +143,12 @@ export async function POST(req: Request) {
     return NextResponse.json({
       received: true,
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error("STRIPE WEBHOOK ERROR:", err);
 
     return NextResponse.json(
       {
-        error: err?.message || "Webhook failed",
+        error: "Webhook failed",
       },
       { status: 500 }
     );

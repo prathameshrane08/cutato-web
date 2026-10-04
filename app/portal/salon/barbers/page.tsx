@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, Scissors, Star, MapPin } from "lucide-react";
 
-import WebShell from "@/app/Components/WebShell";
+import PortalShell from "@/app/Components/portal/PortalShell";
 import { createClient } from "@/app/lib/supabase/client";
 import { getCurrentUser } from "@/app/lib/authSupabase";
 
@@ -76,15 +76,14 @@ export default function SalonBarbersPage() {
   }, []);
 
   return (
-    <WebShell
+    <PortalShell
+      role="salon"
       title="Salon Barbers"
       subtitle="Manage your salon staff and barber profiles."
     >
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-black tracking-[-0.04em]">
-            Your barbers
-          </h2>
+          <h2 className="text-3xl font-black tracking-[-0.04em]">Your barbers</h2>
 
           <p className="mt-2 text-sm text-neutral-500">
             Manage all professionals working under your salon.
@@ -110,9 +109,7 @@ export default function SalonBarbersPage() {
             <Scissors size={28} />
           </div>
 
-          <h3 className="mt-5 text-2xl font-black">
-            No barbers yet
-          </h3>
+          <h3 className="mt-5 text-2xl font-black">No barbers yet</h3>
 
           <p className="mt-3 text-sm text-neutral-500">
             Start building your salon team by adding your first barber.
@@ -138,14 +135,10 @@ export default function SalonBarbersPage() {
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
 
                 <div className="absolute bottom-4 left-4 right-4">
-                  <h3 className="text-2xl font-black text-white">
-                    {barber.name}
-                  </h3>
+                  <h3 className="text-2xl font-black text-white">{barber.name}</h3>
 
                   {barber.tagline ? (
-                    <p className="mt-1 text-sm text-white/70">
-                      {barber.tagline}
-                    </p>
+                    <p className="mt-1 text-sm text-white/70">{barber.tagline}</p>
                   ) : null}
                 </div>
               </div>
@@ -158,18 +151,13 @@ export default function SalonBarbersPage() {
 
                 <div className="mt-4 flex items-center justify-between">
                   <div className="inline-flex items-center gap-2 rounded-full bg-[#ff355d]/10 px-3 py-2 text-sm font-black text-[#ff355d]">
-                    <Star
-                      size={14}
-                      className="fill-[#ff355d]"
-                    />
+                    <Star size={14} className="fill-[#ff355d]" />
                     {Number(barber.rating || 0).toFixed(1)}
                   </div>
 
                   <div
                     className={`rounded-full px-3 py-2 text-xs font-black ${
-                      barber.active
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-red-100 text-red-700"
+                      barber.active ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
                     }`}
                   >
                     {barber.active ? "Active" : "Inactive"}
@@ -195,6 +183,6 @@ export default function SalonBarbersPage() {
           ))}
         </div>
       )}
-    </WebShell>
+    </PortalShell>
   );
 }

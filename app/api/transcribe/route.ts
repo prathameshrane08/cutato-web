@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
+import { rateLimit } from "@/app/lib/rateLimit";
 
 export const runtime = "nodejs";
 
-const MAX_AUDIO_SIZE =
-  25 * 1024 * 1024;
+const MAX_AUDIO_SIZE = 25 * 1024 * 1024;
 
 const ALLOWED_AUDIO_TYPES = [
   "audio/webm",
@@ -17,18 +17,17 @@ const ALLOWED_AUDIO_TYPES = [
   "audio/x-m4a",
 ];
 
-export async function POST(
-  request: Request
-) {
+export async function POST(request: Request) {
+  const limited = rateLimit(request, "transcribe", { limit: 15, windowMs: 60_000 });
+  if (limited) return limited;
+
   try {
-    const apiKey =
-      process.env.OPENAI_API_KEY;
+    const apiKey = process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
       return NextResponse.json(
         {
-          error:
-            "OPENAI_API_KEY is missing. Add it to .env.local and restart the server.",
+          error: "Voice input is temporarily unavailable.",
         },
         {
           status: 500,
@@ -36,17 +35,14 @@ export async function POST(
       );
     }
 
-    const formData =
-      await request.formData();
+    const formData = await request.formData();
 
-    const audio =
-      formData.get("audio");
+    const audio = formData.get("audio");
 
     if (!(audio instanceof File)) {
       return NextResponse.json(
         {
-          error:
-            "No valid audio file was received.",
+          error: "No valid audio file was received.",
         },
         {
           status: 400,
@@ -57,8 +53,7 @@ export async function POST(
     if (audio.size === 0) {
       return NextResponse.json(
         {
-          error:
-            "The recorded audio file is empty.",
+          error: "The recorded audio file is empty.",
         },
         {
           status: 400,
@@ -69,8 +64,7 @@ export async function POST(
     if (audio.size > MAX_AUDIO_SIZE) {
       return NextResponse.json(
         {
-          error:
-            "The audio file is too large. Please record a shorter voice message.",
+          error: "The audio file is too large. Please record a shorter voice message.",
         },
         {
           status: 413,
@@ -78,21 +72,12 @@ export async function POST(
       );
     }
 
-    const normalizedType =
-      audio.type
-        .split(";")[0]
-        .toLowerCase();
+    const normalizedType = audio.type.split(";")[0].toLowerCase();
 
-    if (
-      normalizedType &&
-      !ALLOWED_AUDIO_TYPES.includes(
-        normalizedType
-      )
-    ) {
+    if (normalizedType && !ALLOWED_AUDIO_TYPES.includes(normalizedType)) {
       return NextResponse.json(
         {
-          error:
-            `Unsupported audio format: ${normalizedType}`,
+          error: `Unsupported audio format: ${normalizedType}`,
         },
         {
           status: 415,
@@ -100,76 +85,38 @@ export async function POST(
       );
     }
 
-    console.log(
-      "Received audio:",
-      {
-        name: audio.name,
-        type: audio.type,
-        size: audio.size,
-      }
-    );
+    const openAIForm = new FormData();
 
-    const openAIForm =
-      new FormData();
+    openAIForm.append("file", audio, audio.name || "voice-message.webm");
 
-    openAIForm.append(
-      "file",
-      audio,
-      audio.name ||
-        "voice-message.webm"
-    );
+    openAIForm.append("model", "gpt-4o-mini-transcribe");
 
-    openAIForm.append(
-      "model",
-      "gpt-4o-mini-transcribe"
-    );
-
-    openAIForm.append(
-      "language",
-      "en"
-    );
+    openAIForm.append("language", "en");
 
     openAIForm.append(
       "prompt",
       "The audio is from a barber booking assistant. Expect barber names, haircut services, dates, times, prices, and appointment requests."
     );
 
-    const response = await fetch(
-      "https://api.openai.com/v1/audio/transcriptions",
-      {
-        method: "POST",
-        headers: {
-          Authorization:
-            `Bearer ${apiKey}`,
-        },
-        body: openAIForm,
-      }
-    );
+    const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: openAIForm,
+    });
 
-    const raw =
-      await response.text();
-
-    console.log(
-      "OpenAI transcription status:",
-      response.status
-    );
+    const raw = await response.text();
 
     if (!response.ok) {
-      console.error(
-        "OpenAI transcription error:",
-        raw
-      );
+      console.error("OpenAI transcription error:", raw);
 
-      let detailedError =
-        "Could not transcribe the audio.";
+      let detailedError = "Could not transcribe the audio.";
 
       try {
-        const parsed =
-          JSON.parse(raw);
+        const parsed = JSON.parse(raw);
 
-        detailedError =
-          parsed?.error?.message ||
-          detailedError;
+        detailedError = parsed?.error?.message || detailedError;
       } catch {
         if (raw) {
           detailedError = raw;
@@ -181,8 +128,7 @@ export async function POST(
           error: detailedError,
         },
         {
-          status:
-            response.status,
+          status: response.status,
         }
       );
     }
@@ -196,8 +142,7 @@ export async function POST(
     } catch {
       return NextResponse.json(
         {
-          error:
-            "The transcription service returned an invalid response.",
+          error: "The transcription service returned an invalid response.",
         },
         {
           status: 502,
@@ -205,15 +150,12 @@ export async function POST(
       );
     }
 
-    const text =
-      String(data.text || "")
-        .trim();
+    const text = String(data.text || "").trim();
 
     if (!text) {
       return NextResponse.json(
         {
-          error:
-            "The audio was accepted, but no speech could be detected.",
+          error: "The audio was accepted, but no speech could be detected.",
         },
         {
           status: 422,
@@ -221,26 +163,15 @@ export async function POST(
       );
     }
 
-    console.log(
-      "Transcription completed:",
-      text
-    );
-
     return NextResponse.json({
       text,
     });
   } catch (error) {
-    console.error(
-      "TRANSCRIBE ROUTE ERROR:",
-      error
-    );
+    console.error("TRANSCRIBE ROUTE ERROR:", error);
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Voice transcription failed.",
+        error: error instanceof Error ? error.message : "Voice transcription failed.",
       },
       {
         status: 500,

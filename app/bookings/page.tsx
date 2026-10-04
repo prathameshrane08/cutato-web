@@ -9,19 +9,12 @@ import ChatBot from "@/app/Components/ChatBot";
 import { downloadICS } from "@/app/lib/ics";
 import { useCustomerBarbers } from "@/app/lib/barbersStore";
 import type { Booking, BookingStatus } from "@/app/lib/bookingStore";
-import {
-  getBookingsForUser,
-  updateBookingStatusInSupabase,
-} from "@/app/lib/bookingsSupabase";
+import { getBookingsForUser, updateBookingStatusInSupabase } from "@/app/lib/bookingsSupabase";
 import { getCurrentUser } from "@/app/lib/authSupabase";
 import { subscribeToBookings } from "@/app/lib/realtime";
 import { readSalonSettings } from "@/app/lib/salonSettingsStore";
-import {
-  fmtMoney,
-  formatDate,
-  statusLabel,
-  statusPillStyle,
-} from "@/app/lib/formatters";
+import { fmtMoney, formatDate, statusLabel, statusPillStyle } from "@/app/lib/formatters";
+import { toast } from "@/app/lib/toast";
 
 type PaymentMethod = "online" | "salon";
 
@@ -98,12 +91,9 @@ export default function BookingsPage() {
   useEffect(() => {
     if (!userEmail) return;
 
-    const unsubscribe = subscribeToBookings(
-      () => {
-        loadBookings(userEmail);
-      },
-      `user_email=eq.${userEmail}`
-    );
+    const unsubscribe = subscribeToBookings(() => {
+      loadBookings(userEmail);
+    }, `user_email=eq.${userEmail}`);
 
     return unsubscribe;
   }, [userEmail]);
@@ -118,9 +108,7 @@ export default function BookingsPage() {
       const dt = toLocalStart(b.date, b.time);
 
       const isPastByStatus =
-        status === "completed" ||
-        status === "cancelled" ||
-        status === "no_show";
+        status === "completed" || status === "cancelled" || status === "no_show";
 
       const isPastByTime = dt.getTime() < now.getTime();
 
@@ -129,15 +117,11 @@ export default function BookingsPage() {
     }
 
     upcoming.sort(
-      (a, c) =>
-        toLocalStart(a.date, a.time).getTime() -
-        toLocalStart(c.date, c.time).getTime()
+      (a, c) => toLocalStart(a.date, a.time).getTime() - toLocalStart(c.date, c.time).getTime()
     );
 
     past.sort(
-      (a, c) =>
-        toLocalStart(c.date, c.time).getTime() -
-        toLocalStart(a.date, a.time).getTime()
+      (a, c) => toLocalStart(c.date, c.time).getTime() - toLocalStart(a.date, a.time).getTime()
     );
 
     return { upcoming, past };
@@ -154,7 +138,7 @@ export default function BookingsPage() {
       }
     } catch (err) {
       console.error("Failed to cancel booking:", err);
-      alert("Could not cancel booking.");
+      toast.error("Could not cancel booking.");
     }
   }
 
@@ -262,9 +246,7 @@ function Section({
     <section className="rounded-[34px] border border-black/10 bg-white p-6 shadow-sm md:p-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">
-            {title}
-          </p>
+          <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">{title}</p>
 
           <h2 className="mt-2 text-3xl font-black tracking-[-0.04em]">
             {items.length} booking{items.length === 1 ? "" : "s"}
@@ -306,9 +288,7 @@ function Section({
                       </p>
 
                       <div className="mt-4 flex flex-wrap gap-2">
-                        <span style={statusPillStyle(status)}>
-                          {statusLabel(status)}
-                        </span>
+                        <span style={statusPillStyle(status)}>{statusLabel(status)}</span>
                         <Pill label={`Payment: ${pay}`} />
                         <Pill label={`Tip: ${fmtMoney(eur.tip, currency)}`} />
                       </div>
@@ -327,9 +307,7 @@ function Section({
                               b.barberId
                             )}&serviceId=${encodeURIComponent(
                               b.serviceId
-                            )}&date=${encodeURIComponent(
-                              b.date
-                            )}&time=${encodeURIComponent(
+                            )}&date=${encodeURIComponent(b.date)}&time=${encodeURIComponent(
                               b.time
                             )}&rescheduleFrom=${encodeURIComponent(b.id)}`}
                           >
@@ -360,16 +338,9 @@ function Section({
 
                   <div className="grid gap-2">
                     <Line label="Base price" value={fmtMoney(eur.base, currency)} />
-                    <Line
-                      label="Service price"
-                      value={fmtMoney(eur.service, currency)}
-                    />
+                    <Line label="Service price" value={fmtMoney(eur.service, currency)} />
                     <Line label="Tip" value={fmtMoney(eur.tip, currency)} />
-                    <Line
-                      label="Total"
-                      value={fmtMoney(eur.total, currency)}
-                      strong
-                    />
+                    <Line label="Total" value={fmtMoney(eur.total, currency)} strong />
                   </div>
                 </article>
               );
@@ -389,21 +360,11 @@ function Pill({ label }: { label: string }) {
   );
 }
 
-function Line({
-  label,
-  value,
-  strong,
-}: {
-  label: string;
-  value: string;
-  strong?: boolean;
-}) {
+function Line({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <div className="flex justify-between gap-4">
       <span className="text-sm font-bold text-neutral-500">{label}</span>
-      <span className={`text-sm ${strong ? "font-black" : "font-bold"}`}>
-        {value}
-      </span>
+      <span className={`text-sm ${strong ? "font-black" : "font-bold"}`}>{value}</span>
     </div>
   );
 }

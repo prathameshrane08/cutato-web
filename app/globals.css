@@ -14,11 +14,9 @@
 
   --radius: 28px;
 
-  --shadow-soft:
-    0 10px 30px rgba(0, 0, 0, 0.05);
+  --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.05);
 
-  --shadow-hover:
-    0 16px 40px rgba(0, 0, 0, 0.08);
+  --shadow-hover: 0 16px 40px rgba(0, 0, 0, 0.08);
 }
 
 * {
@@ -159,5 +157,5 @@ button {
 
 .glass {
   backdrop-filter: blur(20px);
-  background: rgba(255,255,255,0.65);
+  background: rgba(255, 255, 255, 0.65);
 }

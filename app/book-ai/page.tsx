@@ -30,10 +30,7 @@ function BookAIInner() {
           return;
         }
 
-        const matchedService = await getBestServiceForBarberFromSupabase(
-          barber.id,
-          service
-        );
+        const matchedService = await getBestServiceForBarberFromSupabase(barber.id, service);
 
         const qs = new URLSearchParams({
           barberId: barber.id,
