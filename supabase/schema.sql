@@ -308,3 +308,6 @@ drop policy if exists "working hours are public" on public.barber_working_hours;
 create policy "working hours are public" on public.barber_working_hours for select using (true);
 
 -- Applications: no client policies, so only the service role can access them.
+
+-- Make the API pick up the new tables immediately.
+notify pgrst, 'reload schema';
