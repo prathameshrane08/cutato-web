@@ -5,13 +5,8 @@ export type BookingEntities = {
   time?: string;
 };
 
-function findFirst(
-  text: string,
-  values: string[]
-) {
-  return values.find((value) =>
-    text.includes(value.toLowerCase())
-  );
+function findFirst(text: string, values: string[]) {
+  return values.find((value) => text.includes(value.toLowerCase()));
 }
 
 export function extractBookingEntities(
@@ -19,7 +14,6 @@ export function extractBookingEntities(
   barberNames: string[],
   serviceNames: string[]
 ): BookingEntities {
-
   const text = message.toLowerCase();
 
   const result: BookingEntities = {};
@@ -50,11 +44,9 @@ export function extractBookingEntities(
     result.date = "tomorrow";
   }
 
-  const timeMatch =
-    text.match(/\b([0-2]?\d)(?::([0-5]\d))?\s?(am|pm)?\b/i);
+  const timeMatch = text.match(/\b([0-2]?\d)(?::([0-5]\d))?\s?(am|pm)?\b/i);
 
   if (timeMatch) {
-
     let hour = Number(timeMatch[1]);
     const minute = timeMatch[2] ?? "00";
     const meridiem = timeMatch[3]?.toLowerCase();
@@ -67,8 +59,7 @@ export function extractBookingEntities(
       hour = 0;
     }
 
-    result.time =
-      `${String(hour).padStart(2, "0")}:${minute}`;
+    result.time = `${String(hour).padStart(2, "0")}:${minute}`;
   }
 
   return result;

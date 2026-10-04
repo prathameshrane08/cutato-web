@@ -1,28 +1,17 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+
+import { adminSupabase, requireAdmin } from "@/app/lib/supabase/serverAuth";
 
 import { sendApprovalEmail } from "@/app/lib/email";
 
 export const runtime = "nodejs";
 
 //--------------------------------------------------
-// Supabase admin client
-//--------------------------------------------------
-
-const adminSupabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-//--------------------------------------------------
 // Generate temporary password
 //--------------------------------------------------
 
 function generatePassword() {
-  const randomPart = crypto
-    .randomUUID()
-    .replace(/-/g, "")
-    .slice(0, 12);
+  const randomPart = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
 
   return `${randomPart}A1!`;
 }
@@ -32,15 +21,17 @@ function generatePassword() {
 // Load all applications
 //==================================================
 
-export async function GET() {
+export async function GET(request: Request) {
+  const admin = await requireAdmin(request);
+  if (!admin.ok) return admin.response;
+
   try {
-    const { data, error } =
-      await adminSupabase
-        .from("applications")
-        .select("*")
-        .order("created_at", {
-          ascending: false,
-        });
+    const { data, error } = await adminSupabase
+      .from("applications")
+      .select("*")
+      .order("created_at", {
+        ascending: false,
+      });
 
     if (error) {
       return NextResponse.json(
@@ -57,17 +48,11 @@ export async function GET() {
       applications: data ?? [],
     });
   } catch (error) {
-    console.error(
-      "ADMIN APPLICATION GET ERROR:",
-      error
-    );
+    console.error("ADMIN APPLICATION GET ERROR:", error);
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Could not load applications.",
+        error: error instanceof Error ? error.message : "Could not load applications.",
       },
       {
         status: 500,
@@ -81,17 +66,14 @@ export async function GET() {
 // Approve application
 //==================================================
 
-export async function POST(
-  request: Request
-) {
-  try {
-    const body =
-      await request.json();
+export async function POST(request: Request) {
+  const admin = await requireAdmin(request);
+  if (!admin.ok) return admin.response;
 
-    const applicationId =
-      String(
-        body.applicationId || ""
-      ).trim();
+  try {
+    const body = await request.json();
+
+    const applicationId = String(body.applicationId || "").trim();
 
     //------------------------------------------------
     // Validate application ID
@@ -100,8 +82,7 @@ export async function POST(
     if (!applicationId) {
       return NextResponse.json(
         {
-          error:
-            "Missing applicationId.",
+          error: "Missing applicationId.",
         },
         {
           status: 400,
@@ -113,23 +94,16 @@ export async function POST(
     // Get application
     //------------------------------------------------
 
-    const {
-      data: application,
-      error: fetchError,
-    } = await adminSupabase
+    const { data: application, error: fetchError } = await adminSupabase
       .from("applications")
       .select("*")
       .eq("id", applicationId)
       .single();
 
-    if (
-      fetchError ||
-      !application
-    ) {
+    if (fetchError || !application) {
       return NextResponse.json(
         {
-          error:
-            "Application not found.",
+          error: "Application not found.",
         },
         {
           status: 404,
@@ -141,14 +115,10 @@ export async function POST(
     // Prevent duplicate approval
     //------------------------------------------------
 
-    if (
-      application.status ===
-      "approved"
-    ) {
+    if (application.status === "approved") {
       return NextResponse.json(
         {
-          error:
-            "This application has already been approved.",
+          error: "This application has already been approved.",
         },
         {
           status: 409,
@@ -156,14 +126,10 @@ export async function POST(
       );
     }
 
-    if (
-      application.status ===
-      "rejected"
-    ) {
+    if (application.status === "rejected") {
       return NextResponse.json(
         {
-          error:
-            "This application has been rejected.",
+          error: "This application has been rejected.",
         },
         {
           status: 409,
@@ -175,22 +141,14 @@ export async function POST(
     // Validate email
     //------------------------------------------------
 
-    const email =
-      String(
-        application.email || ""
-      )
-        .trim()
-        .toLowerCase();
+    const email = String(application.email || "")
+      .trim()
+      .toLowerCase();
 
-    if (
-      !email ||
-      !email.includes("@") ||
-      !email.includes(".")
-    ) {
+    if (!email || !email.includes("@") || !email.includes(".")) {
       return NextResponse.json(
         {
-          error:
-            "Invalid application email.",
+          error: "Invalid application email.",
         },
         {
           status: 400,
@@ -202,33 +160,22 @@ export async function POST(
     // Determine account role
     //------------------------------------------------
 
-    const role:
-      | "barber"
-      | "salon" =
-      application.type === "salon"
-        ? "salon"
-        : "barber";
+    const role: "barber" | "salon" = application.type === "salon" ? "salon" : "barber";
 
     //------------------------------------------------
     // Check whether profile already exists
     //------------------------------------------------
 
-    const {
-      data: existingProfile,
-      error: existingProfileError,
-    } = await adminSupabase
+    const { data: existingProfile, error: existingProfileError } = await adminSupabase
       .from("profiles")
-      .select(
-        "id,email,role,barber_id,salon_id"
-      )
+      .select("id,email,role,barber_id,salon_id")
       .eq("email", email)
       .maybeSingle();
 
     if (existingProfileError) {
       return NextResponse.json(
         {
-          error:
-            existingProfileError.message,
+          error: existingProfileError.message,
         },
         {
           status: 500,
@@ -239,8 +186,7 @@ export async function POST(
     if (existingProfile) {
       return NextResponse.json(
         {
-          error:
-            "An account for this email already exists.",
+          error: "An account for this email already exists.",
         },
         {
           status: 409,
@@ -252,37 +198,24 @@ export async function POST(
     // Generate temporary password
     //------------------------------------------------
 
-    const temporaryPassword =
-      generatePassword();
+    const temporaryPassword = generatePassword();
 
     //------------------------------------------------
     // Create Supabase Auth user
     //------------------------------------------------
 
-    const {
-      data: authData,
-      error: authError,
-    } =
-      await adminSupabase.auth.admin.createUser(
-        {
-          email,
+    const { data: authData, error: authError } = await adminSupabase.auth.admin.createUser({
+      email,
 
-          password:
-            temporaryPassword,
+      password: temporaryPassword,
 
-          email_confirm: true,
-        }
-      );
+      email_confirm: true,
+    });
 
-    if (
-      authError ||
-      !authData.user
-    ) {
+    if (authError || !authData.user) {
       return NextResponse.json(
         {
-          error:
-            authError?.message ||
-            "Could not create authentication account.",
+          error: authError?.message || "Could not create authentication account.",
         },
         {
           status: 500,
@@ -294,83 +227,52 @@ export async function POST(
     // IDs linked to profile
     //------------------------------------------------
 
-    let barberId:
-      | string
-      | null = null;
+    let barberId: string | null = null;
 
-    let salonId:
-      | string
-      | null = null;
+    let salonId: string | null = null;
 
     // Track created business record for rollback
-    let createdBarberId:
-      | string
-      | null = null;
+    let createdBarberId: string | null = null;
 
-    let createdSalonId:
-      | string
-      | null = null;
+    let createdSalonId: string | null = null;
 
     //------------------------------------------------
     // Create SALON
     //------------------------------------------------
 
     if (role === "salon") {
-      const {
-        data: salonRow,
-        error: salonError,
-      } = await adminSupabase
+      const { data: salonRow, error: salonError } = await adminSupabase
         .from("salons")
         .insert({
-          name:
-            application.salon_name ||
-            application.name ||
-            email.split("@")[0],
+          name: application.salon_name || application.name || email.split("@")[0],
 
-          owner_name:
-            application.owner_name ||
-            application.name ||
-            null,
+          owner_name: application.owner_name || application.name || null,
 
           email,
 
-          phone:
-            application.phone ||
-            null,
+          phone: application.phone || null,
 
-          city:
-            application.city ||
-            null,
+          city: application.city || null,
 
-          address:
-            application.address ||
-            null,
+          address: application.address || null,
 
           active: true,
 
-          updated_at:
-            new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         })
         .select()
         .single();
 
-      if (
-        salonError ||
-        !salonRow
-      ) {
+      if (salonError || !salonRow) {
         //------------------------------------------------
         // Remove Auth user if salon creation failed
         //------------------------------------------------
 
-        await adminSupabase.auth.admin.deleteUser(
-          authData.user.id
-        );
+        await adminSupabase.auth.admin.deleteUser(authData.user.id);
 
         return NextResponse.json(
           {
-            error:
-              salonError?.message ||
-              "Could not create salon profile.",
+            error: salonError?.message || "Could not create salon profile.",
           },
           {
             status: 500,
@@ -378,11 +280,9 @@ export async function POST(
         );
       }
 
-      salonId =
-        salonRow.id;
+      salonId = salonRow.id;
 
-      createdSalonId =
-        salonRow.id;
+      createdSalonId = salonRow.id;
     }
 
     //------------------------------------------------
@@ -390,32 +290,20 @@ export async function POST(
     //------------------------------------------------
 
     if (role === "barber") {
-      const generatedBarberId =
-        crypto.randomUUID();
+      const generatedBarberId = crypto.randomUUID();
 
-      const {
-        data: barberRow,
-        error: barberError,
-      } = await adminSupabase
+      const { data: barberRow, error: barberError } = await adminSupabase
         .from("barbers")
         .insert({
-          id:
-            generatedBarberId,
+          id: generatedBarberId,
 
-          name:
-            application.name ||
-            email.split("@")[0],
+          name: application.name || email.split("@")[0],
 
           email,
 
-          area:
-            application.city ||
-            "Unknown",
+          area: application.city || "Unknown",
 
-          address:
-            application.address ||
-            application.city ||
-            "Unknown",
+          address: application.address || application.city || "Unknown",
 
           dist_km: 0,
 
@@ -423,12 +311,9 @@ export async function POST(
 
           reviews: 0,
 
-          tagline:
-            "New Cutato barber",
+          tagline: "New Cutato barber",
 
-          about:
-            application.experience ||
-            "Professional barber on Cutato.",
+          about: application.experience || "Professional barber on Cutato.",
 
           active: true,
 
@@ -437,23 +322,16 @@ export async function POST(
         .select()
         .single();
 
-      if (
-        barberError ||
-        !barberRow
-      ) {
+      if (barberError || !barberRow) {
         //------------------------------------------------
         // Remove Auth user if barber creation failed
         //------------------------------------------------
 
-        await adminSupabase.auth.admin.deleteUser(
-          authData.user.id
-        );
+        await adminSupabase.auth.admin.deleteUser(authData.user.id);
 
         return NextResponse.json(
           {
-            error:
-              barberError?.message ||
-              "Could not create barber profile.",
+            error: barberError?.message || "Could not create barber profile.",
           },
           {
             status: 500,
@@ -461,11 +339,9 @@ export async function POST(
         );
       }
 
-      barberId =
-        barberRow.id;
+      barberId = barberRow.id;
 
-      createdBarberId =
-        barberRow.id;
+      createdBarberId = barberRow.id;
     }
 
     //------------------------------------------------
@@ -473,76 +349,42 @@ export async function POST(
     //------------------------------------------------
 
     const profilePayload = {
-      id:
-        authData.user.id,
+      id: authData.user.id,
 
       email,
 
       role,
 
       name:
-        application.name ||
-        application.owner_name ||
-        application.salon_name ||
-        email.split("@")[0],
+        application.name || application.owner_name || application.salon_name || email.split("@")[0],
 
-      barber_id:
-        barberId,
+      barber_id: barberId,
 
-      salon_id:
-        salonId,
+      salon_id: salonId,
     };
 
-    const {
-      error: profileError,
-    } = await adminSupabase
-      .from("profiles")
-      .insert(
-        profilePayload
-      );
+    const { error: profileError } = await adminSupabase.from("profiles").insert(profilePayload);
 
     //------------------------------------------------
     // Roll back if profile creation fails
     //------------------------------------------------
 
     if (profileError) {
-      console.error(
-        "PROFILE CREATION ERROR:",
-        profileError
-      );
+      console.error("PROFILE CREATION ERROR:", profileError);
 
-      if (
-        createdBarberId
-      ) {
-        await adminSupabase
-          .from("barbers")
-          .delete()
-          .eq(
-            "id",
-            createdBarberId
-          );
+      if (createdBarberId) {
+        await adminSupabase.from("barbers").delete().eq("id", createdBarberId);
       }
 
-      if (
-        createdSalonId
-      ) {
-        await adminSupabase
-          .from("salons")
-          .delete()
-          .eq(
-            "id",
-            createdSalonId
-          );
+      if (createdSalonId) {
+        await adminSupabase.from("salons").delete().eq("id", createdSalonId);
       }
 
-      await adminSupabase.auth.admin.deleteUser(
-        authData.user.id
-      );
+      await adminSupabase.auth.admin.deleteUser(authData.user.id);
 
       return NextResponse.json(
         {
-          error:
-            profileError.message,
+          error: profileError.message,
         },
         {
           status: 500,
@@ -554,29 +396,19 @@ export async function POST(
     // Mark application approved
     //------------------------------------------------
 
-    const {
-      error: updateError,
-    } = await adminSupabase
+    const { error: updateError } = await adminSupabase
       .from("applications")
       .update({
-        status:
-          "approved",
+        status: "approved",
       })
-      .eq(
-        "id",
-        applicationId
-      );
+      .eq("id", applicationId);
 
     if (updateError) {
-      console.error(
-        "APPLICATION STATUS UPDATE ERROR:",
-        updateError
-      );
+      console.error("APPLICATION STATUS UPDATE ERROR:", updateError);
 
       return NextResponse.json(
         {
-          error:
-            updateError.message,
+          error: updateError.message,
         },
         {
           status: 500,
@@ -588,8 +420,7 @@ export async function POST(
     // Send approval email
     //------------------------------------------------
 
-    let emailSent =
-      false;
+    let emailSent = false;
 
     try {
       await sendApprovalEmail({
@@ -600,33 +431,19 @@ export async function POST(
         temporaryPassword,
       });
 
-      emailSent =
-        true;
+      emailSent = true;
     } catch (emailError) {
       //------------------------------------------------
       // Do NOT fail approval because email failed.
       //------------------------------------------------
 
-      console.error(
-        "APPROVAL EMAIL ERROR:",
-        emailError
-      );
+      console.error("APPROVAL EMAIL ERROR:", emailError);
     }
-
-    //------------------------------------------------
-    // IMPORTANT:
-    // temporaryPassword is returned ONLY so we can
-    // test the development approval/login flow.
-    //
-    // Remove this before production.
-    //------------------------------------------------
 
     return NextResponse.json({
       ok: true,
 
       email,
-
-      temporaryPassword,
 
       emailSent,
 
@@ -636,21 +453,14 @@ export async function POST(
 
       salonId,
 
-      userId:
-        authData.user.id,
+      userId: authData.user.id,
     });
   } catch (error) {
-    console.error(
-      "ADMIN APPROVAL ERROR:",
-      error
-    );
+    console.error("ADMIN APPROVAL ERROR:", error);
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Approval failed.",
+        error: error instanceof Error ? error.message : "Approval failed.",
       },
       {
         status: 500,
@@ -664,22 +474,16 @@ export async function POST(
 // Change application status
 //==================================================
 
-export async function PATCH(
-  request: Request
-) {
+export async function PATCH(request: Request) {
+  const admin = await requireAdmin(request);
+  if (!admin.ok) return admin.response;
+
   try {
-    const body =
-      await request.json();
+    const body = await request.json();
 
-    const applicationId =
-      String(
-        body.applicationId || ""
-      ).trim();
+    const applicationId = String(body.applicationId || "").trim();
 
-    const status =
-      String(
-        body.status || ""
-      ).trim();
+    const status = String(body.status || "").trim();
 
     //------------------------------------------------
     // Validate application ID
@@ -688,8 +492,7 @@ export async function PATCH(
     if (!applicationId) {
       return NextResponse.json(
         {
-          error:
-            "Missing applicationId.",
+          error: "Missing applicationId.",
         },
         {
           status: 400,
@@ -701,20 +504,12 @@ export async function PATCH(
     // Allowed manual statuses
     //------------------------------------------------
 
-    const allowedStatuses = [
-      "pending",
-      "rejected",
-    ];
+    const allowedStatuses = ["pending", "rejected"];
 
-    if (
-      !allowedStatuses.includes(
-        status
-      )
-    ) {
+    if (!allowedStatuses.includes(status)) {
       return NextResponse.json(
         {
-          error:
-            "Invalid application status.",
+          error: "Invalid application status.",
         },
         {
           status: 400,
@@ -726,26 +521,19 @@ export async function PATCH(
     // Update
     //------------------------------------------------
 
-    const {
-      data,
-      error,
-    } = await adminSupabase
+    const { data, error } = await adminSupabase
       .from("applications")
       .update({
         status,
       })
-      .eq(
-        "id",
-        applicationId
-      )
+      .eq("id", applicationId)
       .select()
       .single();
 
     if (error) {
       return NextResponse.json(
         {
-          error:
-            error.message,
+          error: error.message,
         },
         {
           status: 500,
@@ -756,21 +544,14 @@ export async function PATCH(
     return NextResponse.json({
       ok: true,
 
-      application:
-        data,
+      application: data,
     });
   } catch (error) {
-    console.error(
-      "ADMIN APPLICATION PATCH ERROR:",
-      error
-    );
+    console.error("ADMIN APPLICATION PATCH ERROR:", error);
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Could not update application.",
+        error: error instanceof Error ? error.message : "Could not update application.",
       },
       {
         status: 500,

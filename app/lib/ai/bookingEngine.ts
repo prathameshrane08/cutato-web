@@ -1,30 +1,14 @@
-import {
-  AIBarber,
-  AIService,
-  getCutatoAIContext,
-} from "./cutatoData";
+import { AIBarber, AIService, getCutatoAIContext } from "./cutatoData";
 
 import { BookingEntities } from "./entities";
 
-import {
-  findBarberByName,
-  getBestBarber,
-} from "./barberEngine";
+import { findBarberByName, getBestBarber } from "./barberEngine";
 
-import {
-  findServiceByName,
-  getCheapestService,
-  barberOffersService,
-} from "./serviceEngine";
+import { findServiceByName, getCheapestService, barberOffersService } from "./serviceEngine";
 
-import {
-  getReservedTimes,
-  isTimeAvailable,
-} from "./availabilityEngine";
+import { getReservedTimes, isTimeAvailable } from "./availabilityEngine";
 
-import {
-  generateSlots,
-} from "./slotEngine";
+import { generateSlots } from "./slotEngine";
 
 export type BookingPlan = {
   barber?: AIBarber;
@@ -44,12 +28,8 @@ export type BookingPlan = {
   missing: string[];
 };
 
-export async function buildBookingPlan(
-  entities: BookingEntities
-): Promise<BookingPlan> {
-
-  const { barbers, services } =
-    await getCutatoAIContext();
+export async function buildBookingPlan(entities: BookingEntities): Promise<BookingPlan> {
+  const { barbers, services } = await getCutatoAIContext();
 
   const missing: string[] = [];
 
@@ -60,20 +40,13 @@ export async function buildBookingPlan(
   let barber: AIBarber | undefined;
 
   if (entities.barber) {
-
-    barber = findBarberByName(
-      barbers,
-      entities.barber
-    );
+    barber = findBarberByName(barbers, entities.barber);
 
     if (!barber) {
       missing.push("barber");
     }
-
   } else {
-
     barber = getBestBarber(barbers);
-
   }
 
   //--------------------------------------------------
@@ -83,40 +56,21 @@ export async function buildBookingPlan(
   let service: AIService | undefined;
 
   if (entities.service) {
-
-    service = findServiceByName(
-      services,
-      entities.service
-    );
+    service = findServiceByName(services, entities.service);
 
     if (!service) {
       missing.push("service");
     }
-
   } else {
-
-    service = getCheapestService(
-      services
-    );
-
+    service = getCheapestService(services);
   }
 
   //--------------------------------------------------
   // Validate Barber + Service
   //--------------------------------------------------
 
-  if (
-    barber &&
-    service &&
-    !barberOffersService(
-      barber.id,
-      service.id,
-      services
-    )
-  ) {
-
+  if (barber && service && !barberOffersService(barber.id, service.id, services)) {
     missing.push("barber");
-
   }
 
   //--------------------------------------------------
@@ -145,60 +99,29 @@ export async function buildBookingPlan(
 
   let suggestedSlots: string[] = [];
 
-  if (
-    barber &&
-    entities.date
-  ) {
+  if (barber && entities.date) {
+    const reserved = await getReservedTimes(barber.id, entities.date);
 
-    const reserved =
-      await getReservedTimes(
-        barber.id,
-        entities.date
-      );
-
-    availableSlots =
-      generateSlots(
-        "09:00",
-        "18:00",
-        reserved
-      );
+    availableSlots = generateSlots("09:00", "18:00", reserved);
 
     if (entities.time) {
-
-      available =
-        await isTimeAvailable(
-          barber.id,
-          entities.date,
-          entities.time
-        );
+      available = await isTimeAvailable(barber.id, entities.date, entities.time);
 
       if (!available) {
-
         // Find the closest available slots
         suggestedSlots = availableSlots
           .sort((a, b) => {
+            const requested = Number(entities.time!.replace(":", ""));
 
-            const requested =
-              Number(entities.time!.replace(":", ""));
+            const first = Number(a.replace(":", ""));
 
-            const first =
-              Number(a.replace(":", ""));
+            const second = Number(b.replace(":", ""));
 
-            const second =
-              Number(b.replace(":", ""));
-
-            return (
-              Math.abs(first - requested) -
-              Math.abs(second - requested)
-            );
-
+            return Math.abs(first - requested) - Math.abs(second - requested);
           })
           .slice(0, 3);
-
       }
-
     }
-
   }
 
   //--------------------------------------------------
@@ -209,17 +132,13 @@ export async function buildBookingPlan(
 
   confidence -= missing.length * 0.2;
 
-  confidence = Math.max(
-    confidence,
-    0.2
-  );
+  confidence = Math.max(confidence, 0.2);
 
   //--------------------------------------------------
   // Return
   //--------------------------------------------------
 
   return {
-
     barber,
 
     service,
@@ -237,7 +156,5 @@ export async function buildBookingPlan(
     confidence,
 
     missing,
-
   };
-
 }

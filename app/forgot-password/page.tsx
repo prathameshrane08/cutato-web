@@ -34,8 +34,8 @@ export default function ForgotPasswordPage() {
       }
 
       setStatus("Password reset link sent. Please check your email.");
-    } catch (err: any) {
-      setError(err?.message || "Could not send reset link.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send reset link.");
     } finally {
       setLoading(false);
     }

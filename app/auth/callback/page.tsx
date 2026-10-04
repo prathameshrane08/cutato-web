@@ -63,14 +63,9 @@ export default function AuthCallbackPage() {
   }, [router]);
 
   return (
-    <WebShell
-      title="Signing you in"
-      subtitle="Completing secure authentication..."
-    >
+    <WebShell title="Signing you in" subtitle="Completing secure authentication...">
       <div className="mx-auto max-w-md rounded-[32px] border border-black/10 bg-white p-8 shadow-sm">
-        <div className="text-lg font-black">
-          Completing login...
-        </div>
+        <div className="text-lg font-black">Completing login...</div>
 
         <div className="mt-3 text-sm text-neutral-500">
           Please wait while we securely sign you in.

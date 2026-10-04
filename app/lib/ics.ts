@@ -15,11 +15,7 @@ function toICSDateUTC(dt: Date) {
 
 function escICS(s: string) {
   // minimal escaping for ICS
-  return s
-    .replace(/\\/g, "\\\\")
-    .replace(/\n/g, "\\n")
-    .replace(/,/g, "\\,")
-    .replace(/;/g, "\\;");
+  return s.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
 }
 
 export function downloadICS(params: {
@@ -28,7 +24,7 @@ export function downloadICS(params: {
   description?: string;
   location?: string;
   startLocal: Date; // local time
-  endLocal: Date;   // local time
+  endLocal: Date; // local time
 }) {
   const uid = `${Date.now()}-${Math.random().toString(16).slice(2)}@cutato`;
   const dtstamp = toICSDateUTC(new Date());

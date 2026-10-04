@@ -23,12 +23,7 @@ export type SalonSettings = {
   updatedAt?: string;
 };
 
-export type BookingStatus =
-  | "pending"
-  | "confirmed"
-  | "completed"
-  | "cancelled"
-  | "no_show";
+export type BookingStatus = "pending" | "confirmed" | "completed" | "cancelled" | "no_show";
 
 export type Booking = {
   id: string;

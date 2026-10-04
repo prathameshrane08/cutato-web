@@ -13,11 +13,7 @@ export function fmtMoney(v: number, currency = "EUR", locale = "de-DE") {
   }
 }
 
-export function formatDate(
-  dateStr: string,
-  timezone = "Europe/Berlin",
-  locale?: string
-) {
+export function formatDate(dateStr: string, timezone = "Europe/Berlin", locale?: string) {
   const [y, m, d] = dateStr.split("-").map(Number);
   const dt = new Date(y, (m || 1) - 1, d || 1);
 
@@ -30,11 +26,7 @@ export function formatDate(
   });
 }
 
-export function formatLongDate(
-  dateStr: string,
-  timezone = "Europe/Berlin",
-  locale?: string
-) {
+export function formatLongDate(dateStr: string, timezone = "Europe/Berlin", locale?: string) {
   const [y, m, d] = dateStr.split("-").map(Number);
   const dt = new Date(y, (m || 1) - 1, d || 1);
 
@@ -47,11 +39,7 @@ export function formatLongDate(
   });
 }
 
-export function formatShortDay(
-  dateStr: string,
-  timezone = "Europe/Berlin",
-  locale?: string
-) {
+export function formatShortDay(dateStr: string, timezone = "Europe/Berlin", locale?: string) {
   const [y, m, d] = dateStr.split("-").map(Number);
   const dt = new Date(y, (m || 1) - 1, d || 1);
 

@@ -3,48 +3,28 @@ import { AIService } from "./cutatoData";
 /**
  * Find a service by its name.
  */
-export function findServiceByName(
-  services: AIService[],
-  name: string
-): AIService | undefined {
-
+export function findServiceByName(services: AIService[], name: string): AIService | undefined {
   const search = name.trim().toLowerCase();
 
-  return services.find(
-    (service) =>
-      service.name.toLowerCase() === search
-  );
+  return services.find((service) => service.name.toLowerCase() === search);
 }
 
 /**
  * Return the cheapest service.
  */
-export function getCheapestService(
-  services: AIService[]
-): AIService | undefined {
-
+export function getCheapestService(services: AIService[]): AIService | undefined {
   if (services.length === 0) {
     return undefined;
   }
 
-  return [...services].sort(
-    (a, b) =>
-      a.base_price_euro - b.base_price_euro
-  )[0];
+  return [...services].sort((a, b) => a.base_price_euro - b.base_price_euro)[0];
 }
 
 /**
  * Return all services belonging to a barber.
  */
-export function getServicesForBarber(
-  services: AIService[],
-  barberId: string
-): AIService[] {
-
-  return services.filter(
-    (service) =>
-      service.barber_id === barberId
-  );
+export function getServicesForBarber(services: AIService[], barberId: string): AIService[] {
+  return services.filter((service) => service.barber_id === barberId);
 }
 
 /**
@@ -55,28 +35,16 @@ export function barberOffersService(
   serviceId: string,
   services: AIService[]
 ): boolean {
-
-  return services.some(
-    (service) =>
-      service.barber_id === barberId &&
-      service.id === serviceId
-  );
+  return services.some((service) => service.barber_id === barberId && service.id === serviceId);
 }
 
 /**
  * Return every barber offering a service with the given name.
  */
-export function getBarbersOfferingService(
-  services: AIService[],
-  serviceName: string
-): string[] {
-
+export function getBarbersOfferingService(services: AIService[], serviceName: string): string[] {
   const search = serviceName.trim().toLowerCase();
 
   return services
-    .filter(
-      (service) =>
-        service.name.toLowerCase() === search
-    )
+    .filter((service) => service.name.toLowerCase() === search)
     .map((service) => service.barber_id);
 }

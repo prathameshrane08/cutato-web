@@ -68,15 +68,14 @@ function normalizeDayRule(rule: DayRule, fallback: DayRule): DayRule {
   };
 }
 
-function normalizeBarberDayRule(
-  rule: BarberDayRule,
-  fallback: BarberDayRule
-): BarberDayRule {
+function normalizeBarberDayRule(rule: BarberDayRule, fallback: BarberDayRule): BarberDayRule {
   return {
     enabled: rule?.enabled ?? fallback.enabled,
     start: normalizeHm(rule?.start, fallback.start),
     end: normalizeHm(rule?.end, fallback.end),
-    breakStart: rule?.breakStart ? normalizeHm(rule.breakStart, fallback.breakStart ?? "13:00") : undefined,
+    breakStart: rule?.breakStart
+      ? normalizeHm(rule.breakStart, fallback.breakStart ?? "13:00")
+      : undefined,
     breakEnd: rule?.breakEnd ? normalizeHm(rule.breakEnd, fallback.breakEnd ?? "13:30") : undefined,
   };
 }
@@ -157,9 +156,7 @@ function normalizeBarberAvailability(a: BarberAvailability): BarberAvailability 
       sat: normalizeBarberDayRule(a?.week?.sat, fallback.week.sat),
       sun: normalizeBarberDayRule(a?.week?.sun, fallback.week.sun),
     },
-    timeOffDates: Array.isArray(a?.timeOffDates)
-      ? a.timeOffDates.map((x) => String(x))
-      : [],
+    timeOffDates: Array.isArray(a?.timeOffDates) ? a.timeOffDates.map((x) => String(x)) : [],
     blocked:
       a?.blocked && typeof a.blocked === "object"
         ? Object.fromEntries(
@@ -198,8 +195,7 @@ export function readSalonAvailability(): SalonAvailability {
   if (typeof window === "undefined") return defaultSalonAvailability();
   ensureAvailabilitySeeded();
   return normalizeSalonAvailability(
-    safeParse<SalonAvailability>(localStorage.getItem(KEY_SALON)) ??
-      defaultSalonAvailability()
+    safeParse<SalonAvailability>(localStorage.getItem(KEY_SALON)) ?? defaultSalonAvailability()
   );
 }
 
@@ -219,8 +215,7 @@ export function readAllBarberAvailability(): BarberAvailability[] {
   if (typeof window === "undefined") return [];
   ensureAvailabilitySeeded();
 
-  const parsed =
-    safeParse<BarberAvailability[]>(localStorage.getItem(KEY_BARBERS)) ?? [];
+  const parsed = safeParse<BarberAvailability[]>(localStorage.getItem(KEY_BARBERS)) ?? [];
 
   return Array.isArray(parsed) ? parsed.map(normalizeBarberAvailability) : [];
 }
@@ -235,10 +230,7 @@ export function writeAllBarberAvailability(list: BarberAvailability[]) {
 
 export function getBarberAvailability(barberId: string): BarberAvailability {
   const all = readAllBarberAvailability();
-  return (
-    all.find((x) => x.barberId === barberId) ??
-    defaultBarberAvailability(barberId)
-  );
+  return all.find((x) => x.barberId === barberId) ?? defaultBarberAvailability(barberId);
 }
 
 export function upsertBarberAvailability(av: BarberAvailability) {
@@ -260,11 +252,7 @@ export function upsertBarberAvailability(av: BarberAvailability) {
   return next;
 }
 
-export function updateBarberDayRule(
-  barberId: string,
-  day: DayName,
-  patch: Partial<BarberDayRule>
-) {
+export function updateBarberDayRule(barberId: string, day: DayName, patch: Partial<BarberDayRule>) {
   const current = getBarberAvailability(barberId);
   return upsertBarberAvailability({
     ...current,
@@ -455,9 +443,7 @@ export function emptySalonAvailability(): SalonAvailability {
   };
 }
 
-export function readSalonAvailabilityForSalon(
-  salonId: string
-): SalonAvailability | null {
+export function readSalonAvailabilityForSalon(salonId: string): SalonAvailability | null {
   if (typeof window === "undefined" || !salonId) return null;
 
   const raw = localStorage.getItem(scopedSalonAvailabilityKey(salonId));
@@ -467,10 +453,7 @@ export function readSalonAvailabilityForSalon(
   return parsed ? normalizeSalonAvailability(parsed) : null;
 }
 
-export function writeSalonAvailabilityForSalon(
-  salonId: string,
-  availability: SalonAvailability
-) {
+export function writeSalonAvailabilityForSalon(salonId: string, availability: SalonAvailability) {
   if (typeof window === "undefined" || !salonId) return;
 
   const next: SalonAvailability = {
@@ -479,10 +462,7 @@ export function writeSalonAvailabilityForSalon(
     updatedAt: new Date().toISOString(),
   };
 
-  localStorage.setItem(
-    scopedSalonAvailabilityKey(salonId),
-    JSON.stringify(next)
-  );
+  localStorage.setItem(scopedSalonAvailabilityKey(salonId), JSON.stringify(next));
 
   emitStoreUpdate(scopedSalonAvailabilityKey(salonId));
 }

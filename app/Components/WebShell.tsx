@@ -3,23 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import {
-  CalendarCheck,
-  LayoutDashboard,
-  LogOut,
-  Menu,
-  Scissors,
-  User,
-} from "lucide-react";
+import { CalendarCheck, LayoutDashboard, LogOut, Menu, Scissors, User } from "lucide-react";
 
 import { getCurrentUser, signOutCustomer } from "@/app/lib/authSupabase";
-import ThemeSwitcher from "./ThemeSwitcher";
-import {
-  getAuthUser,
-  signIn,
-  signOut,
-  type UserRole,
-} from "@/app/Components/auth";
+import { getAuthUser, signIn, signOut, type UserRole } from "@/app/Components/auth";
 import { getProfileByUserId } from "@/app/lib/profilesSupabase";
 import { supabase } from "@/app/lib/supabase";
 
@@ -36,7 +23,7 @@ export default function WebShell({
   subtitle,
   children,
 }: {
-  title: string;
+  title?: string;
   subtitle?: string;
   children: React.ReactNode;
 }) {
@@ -61,10 +48,7 @@ export default function WebShell({
             (localUser.role === "salon" && !localUser.salonId) ||
             (localUser.role === "barber" && !localUser.barberId);
 
-          if (
-            !needsPortalRepair ||
-            !localUser.supabaseUserId
-          ) {
+          if (!needsPortalRepair || !localUser.supabaseUserId) {
             if (!cancelled) {
               setUser(localUser);
             }
@@ -72,25 +56,14 @@ export default function WebShell({
             return;
           }
 
-          const {
-            data: profileRow,
-            error: profileError,
-          } = await supabase
+          const { data: profileRow, error: profileError } = await supabase
             .from("profiles")
-            .select(
-              "id, name, email, role, barber_id, salon_id"
-            )
-            .eq(
-              "id",
-              localUser.supabaseUserId
-            )
+            .select("id, name, email, role, barber_id, salon_id")
+            .eq("id", localUser.supabaseUserId)
             .maybeSingle();
 
           if (profileError) {
-            console.error(
-              "WEBSHELL PROFILE REPAIR ERROR:",
-              profileError
-            );
+            console.error("WEBSHELL PROFILE REPAIR ERROR:", profileError);
 
             if (!cancelled) {
               setUser(localUser);
@@ -101,31 +74,17 @@ export default function WebShell({
 
           if (profileRow) {
             const repairedUser = {
-              name:
-                profileRow.name ||
-                localUser.name ||
-                localUser.email.split("@")[0],
+              name: profileRow.name || localUser.name || localUser.email.split("@")[0],
 
-              email:
-                profileRow.email ||
-                localUser.email,
+              email: profileRow.email || localUser.email,
 
-              role:
-                (profileRow.role ||
-                  localUser.role) as UserRole,
+              role: (profileRow.role || localUser.role) as UserRole,
 
-              barberId:
-                profileRow.barber_id ||
-                localUser.barberId ||
-                undefined,
+              barberId: profileRow.barber_id || localUser.barberId || undefined,
 
-              salonId:
-                profileRow.salon_id ||
-                localUser.salonId ||
-                undefined,
+              salonId: profileRow.salon_id || localUser.salonId || undefined,
 
-              supabaseUserId:
-                localUser.supabaseUserId,
+              supabaseUserId: localUser.supabaseUserId,
             };
 
             signIn(repairedUser);
@@ -149,11 +108,9 @@ export default function WebShell({
         // restore from the current Supabase session.
         //------------------------------------------------
 
-        const { data } =
-          await getCurrentUser();
+        const { data } = await getCurrentUser();
 
-        const supabaseUser =
-          data.user;
+        const supabaseUser = data.user;
 
         if (!supabaseUser?.email) {
           if (!cancelled) {
@@ -168,35 +125,21 @@ export default function WebShell({
         // profile fields.
         //------------------------------------------------
 
-        const profile =
-          await getProfileByUserId(
-            supabaseUser.id
-          );
+        const profile = await getProfileByUserId(supabaseUser.id);
 
         //------------------------------------------------
         // Load portal IDs directly because the current
         // profile helper does not expose salon_id.
         //------------------------------------------------
 
-        const {
-          data: portalProfile,
-          error: portalProfileError,
-        } = await supabase
+        const { data: portalProfile, error: portalProfileError } = await supabase
           .from("profiles")
-          .select(
-            "barber_id, salon_id"
-          )
-          .eq(
-            "id",
-            supabaseUser.id
-          )
+          .select("barber_id, salon_id")
+          .eq("id", supabaseUser.id)
           .maybeSingle();
 
         if (portalProfileError) {
-          console.error(
-            "WEBSHELL PORTAL PROFILE ERROR:",
-            portalProfileError
-          );
+          console.error("WEBSHELL PORTAL PROFILE ERROR:", portalProfileError);
         }
 
         const restoredUser = {
@@ -206,24 +149,15 @@ export default function WebShell({
             supabaseUser.email.split("@")[0] ||
             "Customer",
 
-          email:
-            supabaseUser.email,
+          email: supabaseUser.email,
 
-          role:
-            (profile?.role ||
-              "customer") as UserRole,
+          role: (profile?.role || "customer") as UserRole,
 
-          barberId:
-            portalProfile?.barber_id ||
-            profile?.barber_id ||
-            undefined,
+          barberId: portalProfile?.barber_id || profile?.barber_id || undefined,
 
-          salonId:
-            portalProfile?.salon_id ||
-            undefined,
+          salonId: portalProfile?.salon_id || undefined,
 
-          supabaseUserId:
-            supabaseUser.id,
+          supabaseUserId: supabaseUser.id,
         };
 
         signIn(restoredUser);
@@ -232,15 +166,10 @@ export default function WebShell({
           setUser(restoredUser);
         }
       } catch (error) {
-        console.error(
-          "WEBSHELL AUTH SYNC ERROR:",
-          error
-        );
+        console.error("WEBSHELL AUTH SYNC ERROR:", error);
 
         if (!cancelled) {
-          setUser(
-            getAuthUser()
-          );
+          setUser(getAuthUser());
         }
       }
     }
@@ -268,32 +197,10 @@ export default function WebShell({
     return null;
   }, [user]);
 
-  const displayName =
-    user?.name?.trim() ||
-    user?.email?.split("@")[0] ||
-    "";
-
-  const isPortalUser =
-    user?.role === "salon" ||
-    user?.role === "barber";
+  const displayName = user?.name?.trim() || user?.email?.split("@")[0] || "";
 
   return (
-    <main className="min-h-screen bg-[#f6f6f7] text-neutral-950">
-      <div className="hidden h-9 items-center justify-between bg-black px-6 text-xs font-bold text-white md:flex">
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-emerald-400" />
-          Live booking active
-        </div>
-
-        <div className="text-neutral-400">
-          AI-powered grooming platform
-        </div>
-
-        <div className="text-neutral-400">
-          Support • Dresden, Germany
-        </div>
-      </div>
-
+    <main className="flex min-h-screen flex-col bg-[#f6f6f7] text-neutral-950">
       <header className="sticky top-0 z-50 border-b border-black/5 bg-white/95 backdrop-blur-xl">
         <div className="mx-auto flex min-h-[76px] max-w-[1440px] items-center justify-between gap-5 px-4 py-3 md:px-6">
           <Link href="/" className="group flex shrink-0 items-center gap-3">
@@ -302,12 +209,7 @@ export default function WebShell({
             </span>
 
             <div className="leading-none">
-              <span className="block text-2xl font-black tracking-[-0.06em]">
-                CUTATO
-              </span>
-              <span className="mt-1 hidden text-xs font-bold text-neutral-400 sm:block">
-                AI-powered platform
-              </span>
+              <span className="block text-2xl font-black tracking-[-0.06em]">CUTATO</span>
             </div>
           </Link>
 
@@ -330,38 +232,29 @@ export default function WebShell({
             ) : (
               <>
                 <NavLink href="/">Home</NavLink>
-                <NavLink href="/#featured-barbers">Barbers</NavLink>
+                <NavLink href="/#featured-salons">Salons</NavLink>
+                <NavLink href="/#independent-barbers">Barbers</NavLink>
                 <NavLink href="/portal/barber/apply">Become Barber</NavLink>
                 <NavLink href="/portal/salon/apply">For Salons</NavLink>
 
-                {user?.role === "customer" ? (
-                  <NavLink href="/bookings">Bookings</NavLink>
-                ) : null}
+                {user?.role === "customer" ? <NavLink href="/bookings">Bookings</NavLink> : null}
               </>
             )}
           </nav>
 
           <div className="hidden shrink-0 items-center gap-2 md:flex">
-            {!isPortalUser ? <ThemeSwitcher /> : null}
-
             {user ? (
               <>
                 <UserPill name={displayName} role={user.role} />
 
                 {user.role === "customer" ? (
-                  <HeaderButton
-                    href="/bookings"
-                    icon={<CalendarCheck size={16} />}
-                  >
+                  <HeaderButton href="/bookings" icon={<CalendarCheck size={16} />}>
                     My bookings
                   </HeaderButton>
                 ) : null}
 
                 {portalHref ? (
-                  <HeaderButton
-                    href={portalHref}
-                    icon={<LayoutDashboard size={16} />}
-                  >
+                  <HeaderButton href={portalHref} icon={<LayoutDashboard size={16} />}>
                     Portal
                   </HeaderButton>
                 ) : null}
@@ -421,7 +314,10 @@ export default function WebShell({
                   <MobileLink href="/portal/salon/services" onClick={() => setMobileOpen(false)}>
                     Services
                   </MobileLink>
-                  <MobileLink href="/portal/salon/availability" onClick={() => setMobileOpen(false)}>
+                  <MobileLink
+                    href="/portal/salon/availability"
+                    onClick={() => setMobileOpen(false)}
+                  >
                     Availability
                   </MobileLink>
                   <MobileLink href="/portal/salon/settings" onClick={() => setMobileOpen(false)}>
@@ -439,7 +335,10 @@ export default function WebShell({
                   <MobileLink href="/portal/barber/schedule" onClick={() => setMobileOpen(false)}>
                     Schedule
                   </MobileLink>
-                  <MobileLink href="/portal/barber/availability" onClick={() => setMobileOpen(false)}>
+                  <MobileLink
+                    href="/portal/barber/availability"
+                    onClick={() => setMobileOpen(false)}
+                  >
                     Availability
                   </MobileLink>
                 </>
@@ -448,7 +347,7 @@ export default function WebShell({
                   <MobileLink href="/" onClick={() => setMobileOpen(false)}>
                     Home
                   </MobileLink>
-                  <MobileLink href="/#featured-barbers" onClick={() => setMobileOpen(false)}>
+                  <MobileLink href="/#independent-barbers" onClick={() => setMobileOpen(false)}>
                     Barbers
                   </MobileLink>
                   <MobileLink href="/portal/barber/apply" onClick={() => setMobileOpen(false)}>
@@ -466,9 +365,7 @@ export default function WebShell({
                 <>
                   <div className="rounded-2xl bg-neutral-50 p-4">
                     <p className="font-black">{displayName}</p>
-                    <p className="mt-1 text-xs font-bold capitalize text-[#ff355d]">
-                      {user.role}
-                    </p>
+                    <p className="mt-1 text-xs font-bold capitalize text-[#ff355d]">{user.role}</p>
                   </div>
 
                   <button
@@ -490,36 +387,28 @@ export default function WebShell({
         ) : null}
       </header>
 
-      <section className="mx-auto max-w-[1440px] px-4 py-8 md:px-6 md:py-10">
-        <div className="mb-8">
-          <p className="text-xs font-black uppercase tracking-[0.22em] text-[#ff355d]">
-            CUTATO
-          </p>
+      <section className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-8 md:px-6 md:py-10">
+        {title ? (
+          <div className="mb-8">
+            <h1 className="text-3xl font-black tracking-[-0.04em] md:text-5xl">{title}</h1>
 
-          <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] md:text-5xl">
-            {title}
-          </h1>
-
-          {subtitle ? (
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-500 md:text-base">
-              {subtitle}
-            </p>
-          ) : null}
-        </div>
+            {subtitle ? (
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-500 md:text-base">
+                {subtitle}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {children}
       </section>
+
+      <SiteFooter />
     </main>
   );
 }
 
-function NavLink({
-  href,
-  children,
-}: {
-  href: string;
-  children: React.ReactNode;
-}) {
+function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link
       href={href}
@@ -530,20 +419,12 @@ function NavLink({
   );
 }
 
-function UserPill({
-  name,
-  role,
-}: {
-  name: string;
-  role: UserRole;
-}) {
+function UserPill({ name, role }: { name: string; role: UserRole }) {
   return (
     <div className="hidden items-center gap-2 rounded-full border border-black/10 bg-neutral-50 px-3 py-2 lg:flex">
       <User size={15} className="text-[#ff355d]" />
 
-      <span className="max-w-28 truncate text-sm font-black">
-        {name}
-      </span>
+      <span className="max-w-28 truncate text-sm font-black">{name}</span>
 
       <span className="rounded-full bg-[#ff355d]/10 px-2 py-1 text-[11px] font-black capitalize text-[#ff355d]">
         {role}
@@ -589,5 +470,85 @@ function MobileLink({
     >
       {children}
     </Link>
+  );
+}
+
+function SiteFooter() {
+  return (
+    <footer className="border-t border-black/5 bg-white">
+      <div className="mx-auto grid max-w-[1440px] gap-8 px-4 py-10 md:grid-cols-[1.5fr_1fr_1fr] md:px-6">
+        <div>
+          <Link href="/" className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#ff355d] text-white">
+              <Scissors size={18} />
+            </span>
+            <span className="text-xl font-black tracking-[-0.06em]">CUTATO</span>
+          </Link>
+          <p className="mt-4 max-w-sm text-sm leading-6 text-neutral-500">
+            Book trusted salons and barbers with live availability and instant confirmation.
+          </p>
+        </div>
+
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-neutral-400">
+            Customers
+          </p>
+          <ul className="mt-4 grid gap-2 text-sm font-bold text-neutral-700">
+            <li>
+              <Link href="/book" className="hover:text-[#ff355d]">
+                Book an appointment
+              </Link>
+            </li>
+            <li>
+              <Link href="/hairstyle-advisor" className="hover:text-[#ff355d]">
+                Hairstyle advisor
+              </Link>
+            </li>
+            <li>
+              <Link href="/bookings" className="hover:text-[#ff355d]">
+                My bookings
+              </Link>
+            </li>
+          </ul>
+        </div>
+
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-neutral-400">
+            Partners
+          </p>
+          <ul className="mt-4 grid gap-2 text-sm font-bold text-neutral-700">
+            <li>
+              <Link href="/portal/salon/apply" className="hover:text-[#ff355d]">
+                List your salon
+              </Link>
+            </li>
+            <li>
+              <Link href="/portal/barber/apply" className="hover:text-[#ff355d]">
+                Join as a barber
+              </Link>
+            </li>
+            <li>
+              <Link href="/login" className="hover:text-[#ff355d]">
+                Partner login
+              </Link>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div className="border-t border-black/5">
+        <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 py-5 pl-4 pr-24 text-xs font-bold text-neutral-400 md:pl-6">
+          <span>© {new Date().getFullYear()} Cutato. All rights reserved.</span>
+          <span className="flex gap-5">
+            <Link href="/impressum" className="hover:text-neutral-700">
+              Impressum
+            </Link>
+            <Link href="/privacy" className="hover:text-neutral-700">
+              Privacy
+            </Link>
+          </span>
+        </div>
+      </div>
+    </footer>
   );
 }

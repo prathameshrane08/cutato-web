@@ -19,11 +19,7 @@ export type ToolContext = {
 export type AssistantResponse = {
   text: string;
 
-  command?:
-    | "OPEN_HOME"
-    | "OPEN_BOOKINGS"
-    | "OPEN_BARBER_PORTAL"
-    | "OPEN_SALON_PORTAL";
+  command?: "OPEN_HOME" | "OPEN_BOOKINGS" | "OPEN_BARBER_PORTAL" | "OPEN_SALON_PORTAL";
 
   booking?: {
     barber?: string;

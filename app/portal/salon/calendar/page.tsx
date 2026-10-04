@@ -2,21 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import WebShell from "@/app/Components/WebShell";
+import PortalShell from "@/app/Components/portal/PortalShell";
 import { useCustomerBarbers } from "@/app/lib/barbersStore";
 import { readSalonSettings } from "@/app/lib/salonSettingsStore";
-import {
-  readBookings,
-  type Booking,
-  type BookingStatus,
-} from "@/app/lib/bookingStore";
-import {
-  fmtMoney,
-  formatDate,
-  simpleBadgeStyle,
-  statusLabel,
-} from "@/app/lib/formatters";
-import { requireSalonAuth } from "@/app/portal/_lib/portalAuth";
+import { readBookings, type Booking, type BookingStatus } from "@/app/lib/bookingStore";
+import { fmtMoney, formatDate, simpleBadgeStyle, statusLabel } from "@/app/lib/formatters";
+import RoleGate from "@/app/Components/portal/RoleGate";
 import { subscribeStoreUpdates } from "@/app/lib/storeEvents";
 
 function addDays(base: Date, n: number) {
@@ -82,25 +73,14 @@ function bookingBorderColor(status?: BookingStatus) {
 }
 
 export default function SalonCalendarPage() {
-  const auth = requireSalonAuth();
+  return (
+    <RoleGate role="salon" title="Calendar">
+      {() => <SalonCalendarContent />}
+    </RoleGate>
+  );
+}
 
-  if (!auth.ok) {
-    return (
-      <WebShell title="Access denied" subtitle="You do not have permission to open this page.">
-        <div className="mx-auto max-w-4xl">
-          <div className="theme-card" style={{ padding: 18 }}>
-            <div style={{ fontWeight: 900, fontSize: 18 }}>
-              {auth.reason === "not_logged_in" ? "Please log in" : "Wrong account type"}
-            </div>
-            <div className="theme-muted" style={{ marginTop: 8 }}>
-              This page is only available for salon accounts.
-            </div>
-          </div>
-        </div>
-      </WebShell>
-    );
-  }
-
+function SalonCalendarContent() {
   const salon = useMemo(() => readSalonSettings(), []);
   const { barbers } = useCustomerBarbers();
 
@@ -175,7 +155,8 @@ export default function SalonCalendarPage() {
   }, [filteredBookings]);
 
   const openCount = useMemo(() => {
-    return filteredBookings.filter((b) => b.status === "pending" || b.status === "confirmed").length;
+    return filteredBookings.filter((b) => b.status === "pending" || b.status === "confirmed")
+      .length;
   }, [filteredBookings]);
 
   const completedCount = useMemo(() => {
@@ -183,11 +164,16 @@ export default function SalonCalendarPage() {
   }, [filteredBookings]);
 
   const cancelledCount = useMemo(() => {
-    return filteredBookings.filter((b) => b.status === "cancelled" || b.status === "no_show").length;
+    return filteredBookings.filter((b) => b.status === "cancelled" || b.status === "no_show")
+      .length;
   }, [filteredBookings]);
 
   return (
-    <WebShell title="Salon Calendar" subtitle={`Visual day view for bookings at ${salon.salonName}`}>
+    <PortalShell
+      role="salon"
+      title="Salon Calendar"
+      subtitle={`Visual day view for bookings at ${salon.salonName}`}
+    >
       <div className="mx-auto max-w-7xl" style={{ display: "grid", gap: 14 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <Link href="/portal/salon" className="btn btn-secondary">
@@ -281,7 +267,8 @@ export default function SalonCalendarPage() {
           </div>
 
           <div className="theme-muted" style={{ marginTop: 10, fontSize: 12 }}>
-            Viewing <b>{formatDate(selectedDate, salon.timezone)}</b> • {filteredBookings.length} booking(s)
+            Viewing <b>{formatDate(selectedDate, salon.timezone)}</b> • {filteredBookings.length}{" "}
+            booking(s)
           </div>
         </div>
 
@@ -298,7 +285,11 @@ export default function SalonCalendarPage() {
               const barberBookings = bookingsByBarber.get(barber.id) ?? [];
 
               return (
-                <div key={barber.id} className="theme-card" style={{ padding: 16, borderRadius: 20 }}>
+                <div
+                  key={barber.id}
+                  className="theme-card"
+                  style={{ padding: 16, borderRadius: 20 }}
+                >
                   <div
                     style={{
                       display: "flex",
@@ -311,14 +302,15 @@ export default function SalonCalendarPage() {
                     <div>
                       <div style={{ fontWeight: 950, fontSize: 18 }}>{barber.name}</div>
                       <div className="theme-muted" style={{ marginTop: 4, fontSize: 13 }}>
-                        ID: {barber.id} • {barber.area || "—"} • {barber.active === false ? "Hidden" : "Active"}
+                        ID: {barber.id} • {barber.area || "—"} •{" "}
+                        {barber.active === false ? "Hidden" : "Active"}
                       </div>
                     </div>
 
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                      <span style={simpleBadgeStyle()}>
-                        {barberBookings.length} booking(s)
-                      </span>
+                    <div
+                      style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}
+                    >
+                      <span style={simpleBadgeStyle()}>{barberBookings.length} booking(s)</span>
                     </div>
                   </div>
 
@@ -382,13 +374,25 @@ export default function SalonCalendarPage() {
                                   >
                                     <div>
                                       <div style={{ fontWeight: 950 }}>{booking.serviceName}</div>
-                                      <div className="theme-muted" style={{ fontSize: 13, marginTop: 4 }}>
+                                      <div
+                                        className="theme-muted"
+                                        style={{ fontSize: 13, marginTop: 4 }}
+                                      >
                                         Customer: {booking.userEmail}
                                       </div>
                                     </div>
 
-                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                                      <span style={simpleBadgeStyle()}>{statusLabel(booking.status)}</span>
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        gap: 8,
+                                        flexWrap: "wrap",
+                                        alignItems: "center",
+                                      }}
+                                    >
+                                      <span style={simpleBadgeStyle()}>
+                                        {statusLabel(booking.status)}
+                                      </span>
                                       <span style={simpleBadgeStyle(true)}>
                                         {booking.paymentMethod === "online" ? "Online" : "At salon"}
                                       </span>
@@ -405,7 +409,9 @@ export default function SalonCalendarPage() {
                                   >
                                     <div className="theme-muted" style={{ fontSize: 12 }}>
                                       Duration: {booking.durationMin} min • Reserved:{" "}
-                                      {booking.reservedTimes?.length ? booking.reservedTimes.join(", ") : booking.time}
+                                      {booking.reservedTimes?.length
+                                        ? booking.reservedTimes.join(", ")
+                                        : booking.time}
                                     </div>
                                     <div style={{ fontWeight: 900, fontSize: 13 }}>
                                       {fmtMoney(Number(booking.totalEuro || 0))}
@@ -429,7 +435,7 @@ export default function SalonCalendarPage() {
           </div>
         )}
       </div>
-    </WebShell>
+    </PortalShell>
   );
 }
 

@@ -17,7 +17,7 @@ export function directionsUrl(params: {
   const dest =
     params.lat != null && params.lng != null
       ? `${params.lat},${params.lng}`
-      : params.destinationAddress ?? "";
+      : (params.destinationAddress ?? "");
 
   const qName = params.destinationName ? `${params.destinationName} ` : "";
   const q = encodeURIComponent(`${qName}${dest}`.trim());

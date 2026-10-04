@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import WebShell from "@/app/Components/WebShell";
+import PortalShell from "@/app/Components/portal/PortalShell";
 import { getAuthUser } from "@/app/Components/auth";
 import type { CustomerBarber } from "@/app/lib/barbersStore";
 import { getBarberByIdFromSupabase } from "@/app/lib/barbersSupabase";
@@ -46,19 +46,14 @@ function weekEndKey() {
 }
 
 function sum(list: Booking[], field: keyof Booking) {
-  return list.reduce(
-    (total, item) => total + Number(item[field] || 0),
-    0
-  );
+  return list.reduce((total, item) => total + Number(item[field] || 0), 0);
 }
 
 function errorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
 
   if (error && typeof error === "object" && "message" in error) {
-    return String(
-      (error as { message?: unknown }).message ?? "Unknown error"
-    );
+    return String((error as { message?: unknown }).message ?? "Unknown error");
   }
 
   return "Unknown error";
@@ -67,8 +62,7 @@ function errorMessage(error: unknown) {
 export default function BarberEarningsPage() {
   const authUser = useMemo(() => getAuthUser(), []);
 
-  const barberId =
-    authUser?.role === "barber" ? authUser.barberId ?? "" : "";
+  const barberId = authUser?.role === "barber" ? (authUser.barberId ?? "") : "";
 
   const [barber, setBarber] = useState<CustomerBarber | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -78,9 +72,7 @@ export default function BarberEarningsPage() {
   const loadData = useCallback(
     async (showLoader = false) => {
       if (!barberId) {
-        setLoadError(
-          "This barber account is not linked to a barber profile."
-        );
+        setLoadError("This barber account is not linked to a barber profile.");
         setLoading(false);
         return;
       }
@@ -95,9 +87,7 @@ export default function BarberEarningsPage() {
         ]);
 
         if (!barberRow) {
-          throw new Error(
-            "The barber profile linked to this account does not exist."
-          );
+          throw new Error("The barber profile linked to this account does not exist.");
         }
 
         setBarber({
@@ -117,9 +107,7 @@ export default function BarberEarningsPage() {
 
         setBookings(
           (rows ?? []).filter(
-            (booking) =>
-              booking.status !== "cancelled" &&
-              booking.status !== "no_show"
+            (booking) => booking.status !== "cancelled" && booking.status !== "no_show"
           )
         );
       } catch (error) {
@@ -141,12 +129,9 @@ export default function BarberEarningsPage() {
 
     if (!barberId) return;
 
-    const unsubscribe = subscribeToBookings(
-      () => {
-        void loadData(false);
-      },
-      `barber_id=eq.${barberId}`
-    );
+    const unsubscribe = subscribeToBookings(() => {
+      void loadData(false);
+    }, `barber_id=eq.${barberId}`);
 
     return unsubscribe;
   }, [barberId, loadData]);
@@ -162,27 +147,17 @@ export default function BarberEarningsPage() {
   );
 
   const weekBookings = useMemo(
-    () =>
-      bookings.filter(
-        (booking) =>
-          booking.date >= weekStart && booking.date <= weekEnd
-      ),
+    () => bookings.filter((booking) => booking.date >= weekStart && booking.date <= weekEnd),
     [bookings, weekStart, weekEnd]
   );
 
   const monthBookings = useMemo(
-    () =>
-      bookings.filter((booking) =>
-        booking.date.startsWith(monthPrefix)
-      ),
+    () => bookings.filter((booking) => booking.date.startsWith(monthPrefix)),
     [bookings, monthPrefix]
   );
 
   const completedBookings = useMemo(
-    () =>
-      bookings.filter(
-        (booking) => booking.status === "completed"
-      ),
+    () => bookings.filter((booking) => booking.status === "completed"),
     [bookings]
   );
 
@@ -191,9 +166,7 @@ export default function BarberEarningsPage() {
       bookings
         .slice()
         .sort((first, second) =>
-          `${second.date}${second.time}`.localeCompare(
-            `${first.date}${first.time}`
-          )
+          `${second.date}${second.time}`.localeCompare(`${first.date}${first.time}`)
         )
         .slice(0, 12),
     [bookings]
@@ -201,14 +174,9 @@ export default function BarberEarningsPage() {
 
   if (!authUser || authUser.role !== "barber") {
     return (
-      <WebShell
-        title="Access denied"
-        subtitle="Barber account required."
-      >
+      <PortalShell role="barber" title="Access denied" subtitle="Barber account required.">
         <div className="mx-auto max-w-4xl rounded-[28px] border border-black/10 bg-white p-8 shadow-sm">
-          <h2 className="text-2xl font-black">
-            Barber login required
-          </h2>
+          <h2 className="text-2xl font-black">Barber login required</h2>
 
           <Link
             href="/login"
@@ -217,37 +185,27 @@ export default function BarberEarningsPage() {
             Login
           </Link>
         </div>
-      </WebShell>
+      </PortalShell>
     );
   }
 
   if (loading) {
     return (
-      <WebShell
-        title="Barber Earnings"
-        subtitle="Loading your earnings..."
-      >
+      <PortalShell role="barber" title="Barber Earnings" subtitle="Loading your earnings...">
         <div className="mx-auto max-w-6xl rounded-[28px] border border-black/10 bg-white p-8 shadow-sm">
           Loading earnings...
         </div>
-      </WebShell>
+      </PortalShell>
     );
   }
 
   if (loadError) {
     return (
-      <WebShell
-        title="Barber Earnings"
-        subtitle="Could not load your earnings."
-      >
+      <PortalShell role="barber" title="Barber Earnings" subtitle="Could not load your earnings.">
         <div className="mx-auto max-w-4xl rounded-[28px] border border-red-200 bg-white p-8 shadow-sm">
-          <h2 className="text-2xl font-black">
-            Earnings could not be loaded
-          </h2>
+          <h2 className="text-2xl font-black">Earnings could not be loaded</h2>
 
-          <p className="mt-3 text-sm text-neutral-500">
-            {loadError}
-          </p>
+          <p className="mt-3 text-sm text-neutral-500">{loadError}</p>
 
           <button
             type="button"
@@ -257,12 +215,13 @@ export default function BarberEarningsPage() {
             Try again
           </button>
         </div>
-      </WebShell>
+      </PortalShell>
     );
   }
 
   return (
-    <WebShell
+    <PortalShell
+      role="barber"
       title="Barber Earnings"
       subtitle={`Track income and tips for ${barber?.name ?? "your account"}.`}
     >
@@ -270,13 +229,9 @@ export default function BarberEarningsPage() {
         <PortalNav />
 
         <section className="mt-6 rounded-[32px] bg-neutral-950 p-7 text-white shadow-[0_20px_70px_rgba(0,0,0,0.12)]">
-          <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff355d]">
-            Earnings
-          </p>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff355d]">Earnings</p>
 
-          <h2 className="mt-2 text-3xl font-black">
-            {barber?.name}
-          </h2>
+          <h2 className="mt-2 text-3xl font-black">{barber?.name}</h2>
 
           <p className="mt-2 text-sm text-white/50">
             Revenue shown here comes only from bookings assigned to this barber.
@@ -312,10 +267,7 @@ export default function BarberEarningsPage() {
         <div className="mt-5 grid gap-4 md:grid-cols-3">
           <StatCard
             label="Completed revenue"
-            value={fmtMoney(
-              sum(completedBookings, "totalEuro"),
-              "EUR"
-            )}
+            value={fmtMoney(sum(completedBookings, "totalEuro"), "EUR")}
             sub={`${completedBookings.length} completed booking(s)`}
           />
 
@@ -323,9 +275,7 @@ export default function BarberEarningsPage() {
             label="Online payments"
             value={fmtMoney(
               sum(
-                bookings.filter(
-                  (booking) => booking.paymentMethod === "online"
-                ),
+                bookings.filter((booking) => booking.paymentMethod === "online"),
                 "totalEuro"
               ),
               "EUR"
@@ -337,9 +287,7 @@ export default function BarberEarningsPage() {
             label="Pay at salon"
             value={fmtMoney(
               sum(
-                bookings.filter(
-                  (booking) => booking.paymentMethod === "salon"
-                ),
+                bookings.filter((booking) => booking.paymentMethod === "salon"),
                 "totalEuro"
               ),
               "EUR"
@@ -350,9 +298,7 @@ export default function BarberEarningsPage() {
 
         <section className="mt-6 rounded-[30px] border border-black/10 bg-white p-6 shadow-sm">
           <div>
-            <h2 className="text-2xl font-black">
-              Recent earnings
-            </h2>
+            <h2 className="text-2xl font-black">Recent earnings</h2>
 
             <p className="mt-1 text-sm text-neutral-500">
               Latest non-cancelled bookings assigned to you.
@@ -371,44 +317,29 @@ export default function BarberEarningsPage() {
                   className="flex flex-wrap justify-between gap-4 rounded-[22px] border border-black/10 bg-neutral-50 p-5"
                 >
                   <div>
-                    <h3 className="font-black">
-                      {booking.serviceName}
-                    </h3>
+                    <h3 className="font-black">{booking.serviceName}</h3>
 
                     <p className="mt-1 text-sm text-neutral-500">
                       {formatDate(booking.date)} • {booking.time}
                     </p>
 
                     <p className="mt-1 text-xs text-neutral-400">
-                      {booking.paymentMethod === "online"
-                        ? "Online"
-                        : "At salon"}{" "}
-                      • {statusLabel(booking.status)}
+                      {booking.paymentMethod === "online" ? "Online" : "At salon"} •{" "}
+                      {statusLabel(booking.status)}
                     </p>
                   </div>
 
                   <div className="text-right">
                     <p className="text-lg font-black">
-                      {fmtMoney(
-                        Number(booking.totalEuro) || 0,
-                        "EUR"
-                      )}
+                      {fmtMoney(Number(booking.totalEuro) || 0, "EUR")}
                     </p>
 
                     <p className="mt-1 text-xs text-neutral-500">
-                      Service{" "}
-                      {fmtMoney(
-                        Number(booking.servicePriceEuro) || 0,
-                        "EUR"
-                      )}
+                      Service {fmtMoney(Number(booking.servicePriceEuro) || 0, "EUR")}
                     </p>
 
                     <p className="mt-1 text-xs font-bold text-[#ff355d]">
-                      Tip{" "}
-                      {fmtMoney(
-                        Number(booking.tipEuro) || 0,
-                        "EUR"
-                      )}
+                      Tip {fmtMoney(Number(booking.tipEuro) || 0, "EUR")}
                     </p>
                   </div>
                 </div>
@@ -417,7 +348,7 @@ export default function BarberEarningsPage() {
           </div>
         </section>
       </div>
-    </WebShell>
+    </PortalShell>
   );
 }
 
@@ -432,13 +363,7 @@ function PortalNav() {
   );
 }
 
-function Nav({
-  href,
-  children,
-}: {
-  href: string;
-  children: React.ReactNode;
-}) {
+function Nav({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link
       href={href}
@@ -449,28 +374,14 @@ function Nav({
   );
 }
 
-function StatCard({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-}) {
+function StatCard({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
     <div className="rounded-[26px] border border-black/10 bg-white p-6 shadow-sm">
-      <p className="text-sm font-bold text-neutral-500">
-        {label}
-      </p>
+      <p className="text-sm font-bold text-neutral-500">{label}</p>
 
-      <p className="mt-2 text-3xl font-black tracking-[-0.04em]">
-        {value}
-      </p>
+      <p className="mt-2 text-3xl font-black tracking-[-0.04em]">{value}</p>
 
-      <p className="mt-2 text-xs font-bold text-neutral-400">
-        {sub}
-      </p>
+      <p className="mt-2 text-xs font-bold text-neutral-400">{sub}</p>
     </div>
   );
 }

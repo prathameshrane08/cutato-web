@@ -31,10 +31,7 @@ function PaymentSuccessInner() {
   }, []);
 
   return (
-    <WebShell
-      title="Payment successful"
-      subtitle="Your booking has been confirmed."
-    >
+    <WebShell title="Payment successful" subtitle="Your booking has been confirmed.">
       <div className="mx-auto max-w-2xl">
         <div className="overflow-hidden rounded-[40px] border border-emerald-500/20 bg-white shadow-[0_24px_90px_rgba(0,0,0,0.08)]">
           <div className="relative overflow-hidden bg-neutral-950 px-8 py-14 text-center text-white">
@@ -47,9 +44,7 @@ function PaymentSuccessInner() {
                 </div>
               </div>
 
-              <h1 className="mt-8 text-5xl font-black tracking-[-0.05em]">
-                Payment Complete
-              </h1>
+              <h1 className="mt-8 text-5xl font-black tracking-[-0.05em]">Payment Complete</h1>
 
               <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-white/60">
                 Your appointment has been successfully booked and confirmed.
@@ -99,9 +94,7 @@ function PaymentSuccessInner() {
                 </div>
 
                 <div>
-                  <h3 className="text-base font-black">
-                    What happens next?
-                  </h3>
+                  <h3 className="text-base font-black">What happens next?</h3>
 
                   <div className="mt-3 grid gap-2 text-sm font-semibold text-neutral-500">
                     <p>• Your barber has received the booking.</p>

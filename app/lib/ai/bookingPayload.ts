@@ -14,35 +14,17 @@ export type BookingPayload = {
   time: string;
 };
 
-export function createBookingPayload(
-  plan: BookingPlan
-): BookingPayload | null {
-  if (
-    !plan.barber ||
-    !plan.service ||
-    !plan.date ||
-    !plan.time ||
-    !plan.available
-  ) {
+export function createBookingPayload(plan: BookingPlan): BookingPayload | null {
+  if (!plan.barber || !plan.service || !plan.date || !plan.time || !plan.available) {
     return null;
   }
 
-  const durationMin = Number(
-    plan.service.duration_min
-  );
+  const durationMin = Number(plan.service.duration_min);
 
-  const basePriceEuro = Number(
-    plan.service.base_price_euro
-  );
+  const basePriceEuro = Number(plan.service.base_price_euro);
 
-  if (
-    !Number.isFinite(durationMin) ||
-    durationMin <= 0
-  ) {
-    console.error(
-      "Invalid service duration:",
-      plan.service.duration_min
-    );
+  if (!Number.isFinite(durationMin) || durationMin <= 0) {
+    console.error("Invalid service duration:", plan.service.duration_min);
 
     return null;
   }

@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import WebShell from "@/app/Components/WebShell";
+import { createClient } from "@/app/lib/supabase/client";
+import { authorizedFetch } from "@/app/lib/supabase/authorizedFetch";
+import { toast } from "@/app/lib/toast";
 
 type Application = {
   id: string;
@@ -26,24 +30,68 @@ type Application = {
   created_at: string;
 };
 
-type Filter =
-  | "all"
-  | "pending"
-  | "approved"
-  | "rejected";
+type Filter = "all" | "pending" | "approved" | "rejected";
 
 export default function AdminApplicationsPage() {
-  const [applications, setApplications] =
-    useState<Application[]>([]);
+  const router = useRouter();
 
-  const [loading, setLoading] =
-    useState(true);
+  const supabase = useMemo(() => createClient(), []);
 
-  const [actionId, setActionId] =
-    useState<string | null>(null);
+  const [adminChecked, setAdminChecked] = useState(false);
 
-  const [filter, setFilter] =
-    useState<Filter>("all");
+  const [adminEmail, setAdminEmail] = useState("");
+
+  const [applications, setApplications] = useState<Application[]>([]);
+
+  const [loading, setLoading] = useState(true);
+
+  const [actionId, setActionId] = useState<string | null>(null);
+
+  const [filter, setFilter] = useState<Filter>("all");
+
+  //--------------------------------------------------
+  // Admin access guard
+  //--------------------------------------------------
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function verifyAdmin() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      const allowedAdminEmail = (process.env.NEXT_PUBLIC_ADMIN_EMAIL || "admin@cutato.com")
+        .trim()
+        .toLowerCase();
+
+      if (!user?.email || user.email.trim().toLowerCase() !== allowedAdminEmail) {
+        if (!cancelled) {
+          await supabase.auth.signOut();
+          router.replace("/admin/login");
+        }
+
+        return;
+      }
+
+      if (!cancelled) {
+        setAdminEmail(user.email);
+        setAdminChecked(true);
+      }
+    }
+
+    void verifyAdmin();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router, supabase]);
+
+  async function adminLogout() {
+    await supabase.auth.signOut();
+    router.replace("/admin/login");
+    router.refresh();
+  }
 
   //--------------------------------------------------
   // Load applications
@@ -53,37 +101,23 @@ export default function AdminApplicationsPage() {
     try {
       setLoading(true);
 
-      const response = await fetch(
-        "/api/admin/applications",
-        {
-          method: "GET",
-          cache: "no-store",
-        }
-      );
+      const response = await authorizedFetch("/api/admin/applications", {
+        method: "GET",
+        cache: "no-store",
+      });
 
-      const result =
-        await response.json();
+      const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(
-          result.error ||
-            "Could not load applications."
-        );
+        throw new Error(result.error || "Could not load applications.");
       }
 
-      setApplications(
-        result.applications ?? []
-      );
+      setApplications(result.applications ?? []);
     } catch (error) {
-      console.error(
-        "LOAD APPLICATIONS ERROR:",
-        error
-      );
+      console.error("LOAD APPLICATIONS ERROR:", error);
 
-      alert(
-        error instanceof Error
-          ? error.message
-          : "Unexpected error while loading applications."
+      toast.error(
+        error instanceof Error ? error.message : "Unexpected error while loading applications."
       );
 
       setApplications([]);
@@ -96,76 +130,45 @@ export default function AdminApplicationsPage() {
   // Approve application
   //--------------------------------------------------
 
-  async function approveApplication(
-    id: string
-  ) {
+  async function approveApplication(id: string) {
     try {
       setActionId(id);
 
-      const response = await fetch(
-        "/api/admin/applications",
-        {
-          method: "POST",
+      const response = await authorizedFetch("/api/admin/applications", {
+        method: "POST",
 
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
+        headers: {
+          "Content-Type": "application/json",
+        },
 
-          body: JSON.stringify({
-            applicationId: id,
-          }),
-        }
-      );
+        body: JSON.stringify({
+          applicationId: id,
+        }),
+      });
 
-      const data =
-        await response.json();
+      const data = await response.json();
 
-      console.log(
-        "APPROVAL RESPONSE:",
-        data
-      );
+      console.log("APPROVAL RESPONSE:", data);
 
       if (!response.ok) {
-        alert(
-          data.error ||
-            "Approval failed."
-        );
+        toast.error(data.error || "Approval failed.");
 
         return;
       }
 
-      const emailStatus =
-        data.emailSent
-          ? "Email sent successfully ✅"
-          : "Email was NOT sent ⚠️";
-
-      alert(
-        [
-          "Application approved successfully.",
-          "",
-          `Role: ${data.role}`,
-          `Login email: ${data.email}`,
-          `Temporary password: ${data.temporaryPassword}`,
-          "",
-          emailStatus,
-          "",
-          "Use these credentials to test the portal login.",
-        ].join("\n")
-      );
+      if (data.emailSent) {
+        toast.success(`Application approved. Login details were emailed to ${data.email}.`);
+      } else {
+        toast.info(
+          `Application approved, but the welcome email to ${data.email} could not be sent. Ask them to use "Forgot password" on the login page.`
+        );
+      }
 
       await loadApplications();
     } catch (error) {
-      console.error(
-        "APPROVAL ERROR:",
-        error
-      );
+      console.error("APPROVAL ERROR:", error);
 
-      alert(
-        error instanceof Error
-          ? error.message
-          : "Approval failed."
-      );
+      toast.error(error instanceof Error ? error.message : "Approval failed.");
     } finally {
       setActionId(null);
     }
@@ -175,13 +178,8 @@ export default function AdminApplicationsPage() {
   // Reject application
   //--------------------------------------------------
 
-  async function rejectApplication(
-    id: string
-  ) {
-    const confirmed =
-      window.confirm(
-        "Are you sure you want to reject this application?"
-      );
+  async function rejectApplication(id: string) {
+    const confirmed = window.confirm("Are you sure you want to reject this application?");
 
     if (!confirmed) {
       return;
@@ -190,45 +188,30 @@ export default function AdminApplicationsPage() {
     try {
       setActionId(id);
 
-      const response = await fetch(
-        "/api/admin/applications",
-        {
-          method: "PATCH",
+      const response = await authorizedFetch("/api/admin/applications", {
+        method: "PATCH",
 
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
+        headers: {
+          "Content-Type": "application/json",
+        },
 
-          body: JSON.stringify({
-            applicationId: id,
-            status: "rejected",
-          }),
-        }
-      );
+        body: JSON.stringify({
+          applicationId: id,
+          status: "rejected",
+        }),
+      });
 
-      const data =
-        await response.json();
+      const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(
-          data.error ||
-            "Could not reject application."
-        );
+        throw new Error(data.error || "Could not reject application.");
       }
 
       await loadApplications();
     } catch (error) {
-      console.error(
-        "REJECTION ERROR:",
-        error
-      );
+      console.error("REJECTION ERROR:", error);
 
-      alert(
-        error instanceof Error
-          ? error.message
-          : "Could not reject application."
-      );
+      toast.error(error instanceof Error ? error.message : "Could not reject application.");
     } finally {
       setActionId(null);
     }
@@ -239,30 +222,14 @@ export default function AdminApplicationsPage() {
   //--------------------------------------------------
 
   const stats = useMemo(() => {
-    const pending =
-      applications.filter(
-        (application) =>
-          application.status ===
-          "pending"
-      ).length;
+    const pending = applications.filter((application) => application.status === "pending").length;
 
-    const approved =
-      applications.filter(
-        (application) =>
-          application.status ===
-          "approved"
-      ).length;
+    const approved = applications.filter((application) => application.status === "approved").length;
 
-    const rejected =
-      applications.filter(
-        (application) =>
-          application.status ===
-          "rejected"
-      ).length;
+    const rejected = applications.filter((application) => application.status === "rejected").length;
 
     return {
-      total:
-        applications.length,
+      total: applications.length,
 
       pending,
 
@@ -276,32 +243,38 @@ export default function AdminApplicationsPage() {
   // Filter
   //--------------------------------------------------
 
-  const visibleApplications =
-    useMemo(() => {
-      if (filter === "all") {
-        return applications;
-      }
+  const visibleApplications = useMemo(() => {
+    if (filter === "all") {
+      return applications;
+    }
 
-      return applications.filter(
-        (application) =>
-          application.status ===
-          filter
-      );
-    }, [applications, filter]);
+    return applications.filter((application) => application.status === filter);
+  }, [applications, filter]);
 
   //--------------------------------------------------
   // Initial load
   //--------------------------------------------------
 
   useEffect(() => {
+    if (!adminChecked) {
+      return;
+    }
+
     void loadApplications();
-  }, []);
+  }, [adminChecked]);
+
+  if (!adminChecked) {
+    return (
+      <WebShell title="Admin" subtitle="Checking administrator access...">
+        <div className="mx-auto max-w-3xl rounded-[30px] border border-black/10 bg-white p-8 shadow-sm">
+          <p className="font-black">Checking administrator access...</p>
+        </div>
+      </WebShell>
+    );
+  }
 
   return (
-    <WebShell
-      title="Admin"
-      subtitle="Review and manage Cutato barber and salon applications."
-    >
+    <WebShell title="Admin" subtitle="Review and manage Cutato barber and salon applications.">
       <div className="mx-auto max-w-7xl">
         {/* ==========================================
             HEADER
@@ -318,10 +291,23 @@ export default function AdminApplicationsPage() {
             </h1>
 
             <p className="mt-4 max-w-2xl leading-7 text-white/60">
-              Review new barber and salon
-              applications, approve accounts
-              and manage application status.
+              Review new barber and salon applications, approve accounts and manage application
+              status.
             </p>
+
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <span className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-black text-white/70">
+                {adminEmail}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => void adminLogout()}
+                className="rounded-full bg-white px-4 py-2 text-xs font-black text-neutral-950 transition hover:bg-neutral-100"
+              >
+                Admin logout
+              </button>
+            </div>
           </div>
         </div>
 
@@ -330,25 +316,13 @@ export default function AdminApplicationsPage() {
         ========================================== */}
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard
-            label="Total"
-            value={stats.total}
-          />
+          <StatCard label="Total" value={stats.total} />
 
-          <StatCard
-            label="Pending"
-            value={stats.pending}
-          />
+          <StatCard label="Pending" value={stats.pending} />
 
-          <StatCard
-            label="Approved"
-            value={stats.approved}
-          />
+          <StatCard label="Approved" value={stats.approved} />
 
-          <StatCard
-            label="Rejected"
-            value={stats.rejected}
-          />
+          <StatCard label="Rejected" value={stats.rejected} />
         </div>
 
         {/* ==========================================
@@ -356,44 +330,24 @@ export default function AdminApplicationsPage() {
         ========================================== */}
 
         <div className="mt-8 flex flex-wrap gap-2">
-          <FilterButton
-            active={
-              filter === "all"
-            }
-            label="All"
-            onClick={() =>
-              setFilter("all")
-            }
-          />
+          <FilterButton active={filter === "all"} label="All" onClick={() => setFilter("all")} />
 
           <FilterButton
-            active={
-              filter === "pending"
-            }
+            active={filter === "pending"}
             label={`Pending (${stats.pending})`}
-            onClick={() =>
-              setFilter("pending")
-            }
+            onClick={() => setFilter("pending")}
           />
 
           <FilterButton
-            active={
-              filter === "approved"
-            }
+            active={filter === "approved"}
             label={`Approved (${stats.approved})`}
-            onClick={() =>
-              setFilter("approved")
-            }
+            onClick={() => setFilter("approved")}
           />
 
           <FilterButton
-            active={
-              filter === "rejected"
-            }
+            active={filter === "rejected"}
             label={`Rejected (${stats.rejected})`}
-            onClick={() =>
-              setFilter("rejected")
-            }
+            onClick={() => setFilter("rejected")}
           />
         </div>
 
@@ -404,176 +358,94 @@ export default function AdminApplicationsPage() {
         <div className="mt-6 grid gap-5">
           {loading ? (
             <div className="rounded-[28px] border border-black/10 bg-white p-8 shadow-sm">
-              <p className="font-black">
-                Loading applications...
-              </p>
+              <p className="font-black">Loading applications...</p>
             </div>
-          ) : visibleApplications.length ===
-            0 ? (
+          ) : visibleApplications.length === 0 ? (
             <div className="rounded-[28px] border border-black/10 bg-white p-8 shadow-sm">
-              <h2 className="text-xl font-black">
-                No applications
-              </h2>
+              <h2 className="text-xl font-black">No applications</h2>
 
               <p className="mt-2 text-sm text-neutral-500">
-                There are no applications in
-                this category.
+                There are no applications in this category.
               </p>
             </div>
           ) : (
-            visibleApplications.map(
-              (application) => {
-                const isProcessing =
-                  actionId ===
-                  application.id;
+            visibleApplications.map((application) => {
+              const isProcessing = actionId === application.id;
 
-                const displayName =
-                  application.type ===
-                  "salon"
-                    ? application.salon_name ||
-                      application.owner_name ||
-                      "Unnamed salon"
-                    : application.name ||
-                      "Unnamed barber";
+              const displayName =
+                application.type === "salon"
+                  ? application.salon_name || application.owner_name || "Unnamed salon"
+                  : application.name || "Unnamed barber";
 
-                return (
-                  <article
-                    key={
-                      application.id
-                    }
-                    className="rounded-[32px] border border-black/10 bg-white p-6 shadow-sm md:p-8"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-5">
-                      <div>
-                        <div className="inline-flex rounded-full bg-[#ff355d]/10 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-[#ff355d]">
-                          {
-                            application.type
-                          }
-                        </div>
-
-                        <h2 className="mt-4 text-3xl font-black tracking-[-0.04em]">
-                          {
-                            displayName
-                          }
-                        </h2>
-
-                        <p className="mt-2 text-sm font-bold text-neutral-500">
-                          {
-                            application.email
-                          }
-                        </p>
-
-                        <p className="mt-2 text-xs font-bold text-neutral-400">
-                          Applied{" "}
-                          {formatDate(
-                            application.created_at
-                          )}
-                        </p>
+              return (
+                <article
+                  key={application.id}
+                  className="rounded-[32px] border border-black/10 bg-white p-6 shadow-sm md:p-8"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-5">
+                    <div>
+                      <div className="inline-flex rounded-full bg-[#ff355d]/10 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-[#ff355d]">
+                        {application.type}
                       </div>
 
-                      <StatusBadge
-                        status={
-                          application.status
-                        }
-                      />
+                      <h2 className="mt-4 text-3xl font-black tracking-[-0.04em]">{displayName}</h2>
+
+                      <p className="mt-2 text-sm font-bold text-neutral-500">{application.email}</p>
+
+                      <p className="mt-2 text-xs font-bold text-neutral-400">
+                        Applied {formatDate(application.created_at)}
+                      </p>
                     </div>
 
-                    <div className="mt-7 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                      {application.owner_name ? (
-                        <Info
-                          label="Owner"
-                          value={
-                            application.owner_name
-                          }
-                        />
-                      ) : null}
+                    <StatusBadge status={application.status} />
+                  </div>
 
-                      {application.phone ? (
-                        <Info
-                          label="Phone"
-                          value={
-                            application.phone
-                          }
-                        />
-                      ) : null}
-
-                      {application.city ? (
-                        <Info
-                          label="City"
-                          value={
-                            application.city
-                          }
-                        />
-                      ) : null}
-
-                      {application.address ? (
-                        <Info
-                          label="Address"
-                          value={
-                            application.address
-                          }
-                        />
-                      ) : null}
-
-                      {application.experience ? (
-                        <Info
-                          label="Experience"
-                          value={
-                            application.experience
-                          }
-                        />
-                      ) : null}
-
-                      {application.instagram ? (
-                        <Info
-                          label="Instagram"
-                          value={
-                            application.instagram
-                          }
-                        />
-                      ) : null}
-                    </div>
-
-                    {application.status ===
-                    "pending" ? (
-                      <div className="mt-8 flex flex-wrap gap-3 border-t border-black/10 pt-6">
-                        <button
-                          type="button"
-                          disabled={
-                            isProcessing
-                          }
-                          onClick={() =>
-                            void approveApplication(
-                              application.id
-                            )
-                          }
-                          className="rounded-full bg-emerald-600 px-6 py-3 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {isProcessing
-                            ? "Processing..."
-                            : "Approve"}
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={
-                            isProcessing
-                          }
-                          onClick={() =>
-                            void rejectApplication(
-                              application.id
-                            )
-                          }
-                          className="rounded-full bg-red-600 px-6 py-3 text-sm font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Reject
-                        </button>
-                      </div>
+                  <div className="mt-7 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {application.owner_name ? (
+                      <Info label="Owner" value={application.owner_name} />
                     ) : null}
-                  </article>
-                );
-              }
-            )
+
+                    {application.phone ? <Info label="Phone" value={application.phone} /> : null}
+
+                    {application.city ? <Info label="City" value={application.city} /> : null}
+
+                    {application.address ? (
+                      <Info label="Address" value={application.address} />
+                    ) : null}
+
+                    {application.experience ? (
+                      <Info label="Experience" value={application.experience} />
+                    ) : null}
+
+                    {application.instagram ? (
+                      <Info label="Instagram" value={application.instagram} />
+                    ) : null}
+                  </div>
+
+                  {application.status === "pending" ? (
+                    <div className="mt-8 flex flex-wrap gap-3 border-t border-black/10 pt-6">
+                      <button
+                        type="button"
+                        disabled={isProcessing}
+                        onClick={() => void approveApplication(application.id)}
+                        className="rounded-full bg-emerald-600 px-6 py-3 text-sm font-black text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isProcessing ? "Processing..." : "Approve"}
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isProcessing}
+                        onClick={() => void rejectApplication(application.id)}
+                        className="rounded-full bg-red-600 px-6 py-3 text-sm font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })
           )}
         </div>
       </div>
@@ -585,22 +457,12 @@ export default function AdminApplicationsPage() {
 // STAT CARD
 //==================================================
 
-function StatCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: number;
-}) {
+function StatCard({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-[28px] border border-black/10 bg-white p-6 shadow-sm">
-      <p className="text-xs font-black uppercase tracking-[0.18em] text-neutral-400">
-        {label}
-      </p>
+      <p className="text-xs font-black uppercase tracking-[0.18em] text-neutral-400">{label}</p>
 
-      <p className="mt-3 text-4xl font-black tracking-[-0.04em] text-neutral-950">
-        {value}
-      </p>
+      <p className="mt-3 text-4xl font-black tracking-[-0.04em] text-neutral-950">{value}</p>
     </div>
   );
 }
@@ -637,11 +499,7 @@ function FilterButton({
 // STATUS
 //==================================================
 
-function StatusBadge({
-  status,
-}: {
-  status: string;
-}) {
+function StatusBadge({ status }: { status: string }) {
   const styles =
     status === "approved"
       ? "bg-emerald-100 text-emerald-700"
@@ -650,11 +508,7 @@ function StatusBadge({
         : "bg-yellow-100 text-yellow-700";
 
   return (
-    <div
-      className={`rounded-full px-4 py-2 text-sm font-black capitalize ${styles}`}
-    >
-      {status}
-    </div>
+    <div className={`rounded-full px-4 py-2 text-sm font-black capitalize ${styles}`}>{status}</div>
   );
 }
 
@@ -662,22 +516,12 @@ function StatusBadge({
 // INFO
 //==================================================
 
-function Info({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function Info({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl bg-neutral-50 p-4">
-      <p className="text-xs font-black uppercase tracking-wide text-neutral-400">
-        {label}
-      </p>
+      <p className="text-xs font-black uppercase tracking-wide text-neutral-400">{label}</p>
 
-      <p className="mt-2 break-words text-sm font-bold text-neutral-800">
-        {value}
-      </p>
+      <p className="mt-2 break-words text-sm font-bold text-neutral-800">{value}</p>
     </div>
   );
 }
@@ -686,21 +530,14 @@ function Info({
 // DATE
 //==================================================
 
-function formatDate(
-  value: string
-) {
+function formatDate(value: string) {
   if (!value) {
     return "—";
   }
 
-  const date =
-    new Date(value);
+  const date = new Date(value);
 
-  if (
-    Number.isNaN(
-      date.getTime()
-    )
-  ) {
+  if (Number.isNaN(date.getTime())) {
     return value;
   }
 

@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import WebShell from "@/app/Components/WebShell";
-import { requireSalonAuth } from "@/app/portal/_lib/portalAuth";
+import PortalShell from "@/app/Components/portal/PortalShell";
+import RoleGate from "@/app/Components/portal/RoleGate";
+import type { AuthUser } from "@/app/Components/auth";
 import {
   getServicesFromSupabase,
   upsertServiceToSupabase,
@@ -11,6 +12,7 @@ import {
 } from "@/app/lib/servicesStore";
 import { getBarbersForSalonFromSupabase } from "@/app/lib/barbersSupabase";
 import { supabase } from "@/app/lib/supabase";
+import { toast } from "@/app/lib/toast";
 
 const CATEGORIES = ["Haircut", "Fade", "Beard", "Combo", "Color", "Kids", "Other"] as const;
 
@@ -26,19 +28,15 @@ function uid() {
 }
 
 export default function SalonServicesPage() {
-  const auth = requireSalonAuth();
+  return (
+    <RoleGate role="salon" title="Services">
+      {(user) => <SalonServicesContent user={user} />}
+    </RoleGate>
+  );
+}
 
-  if (!auth.ok) {
-    return (
-      <WebShell title="Access denied" subtitle="Salon account required.">
-        <div className="mx-auto max-w-4xl rounded-[28px] border border-black/10 bg-white p-8">
-          This page is only available for salon accounts.
-        </div>
-      </WebShell>
-    );
-  }
-
-  const salonId = auth.user.salonId ?? "";
+function SalonServicesContent({ user }: { user: AuthUser }) {
+  const salonId = user.salonId ?? "";
 
   const [services, setServices] = useState<Service[]>([]);
   const [barbers, setBarbers] = useState<{ id: string; name: string }[]>([]);
@@ -48,8 +46,7 @@ export default function SalonServicesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [name, setName] = useState("");
-  const [category, setCategory] =
-    useState<(typeof CATEGORIES)[number]>("Haircut");
+  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("Haircut");
   const [durationMin, setDurationMin] = useState(30);
   const [basePriceEuro, setBasePriceEuro] = useState(25);
   const [description, setDescription] = useState("");
@@ -83,9 +80,7 @@ export default function SalonServicesPage() {
         const matchingBarberId = rowBarberIds[0];
 
         const suffix = `_${matchingBarberId}`;
-        const baseId = rawId.endsWith(suffix)
-          ? rawId.slice(0, -suffix.length)
-          : rawId;
+        const baseId = rawId.endsWith(suffix) ? rawId.slice(0, -suffix.length) : rawId;
 
         const existing = grouped.get(baseId);
 
@@ -108,7 +103,7 @@ export default function SalonServicesPage() {
     } catch (error) {
       console.error("Failed to load salon services:", error);
       setServices([]);
-      alert("Could not load this salon's services.");
+      toast.error("Could not load this salon's services.");
     } finally {
       setLoading(false);
     }
@@ -165,20 +160,18 @@ export default function SalonServicesPage() {
 
   function toggleBarber(id: string) {
     setAssignedBarberIds((current) =>
-      current.includes(id)
-        ? current.filter((x) => x !== id)
-        : [...current, id]
+      current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
     );
   }
 
   async function saveService() {
     if (!name.trim()) {
-      alert("Service name is required.");
+      toast.error("Service name is required.");
       return;
     }
 
     if (assignedBarberIds.length === 0) {
-      alert("Assign this service to at least one barber in this salon.");
+      toast.error("Assign this service to at least one barber in this salon.");
       return;
     }
 
@@ -186,7 +179,7 @@ export default function SalonServicesPage() {
     const safeAssignments = assignedBarberIds.filter((id) => allowedIds.has(id));
 
     if (safeAssignments.length === 0) {
-      alert("The selected barbers do not belong to this salon.");
+      toast.error("The selected barbers do not belong to this salon.");
       return;
     }
 
@@ -205,7 +198,10 @@ export default function SalonServicesPage() {
     try {
       // Delete only rows of this service that belong to this salon.
       if (editingId) {
-        await deleteServiceRowsForSalon(editingId, barbers.map((b) => b.id));
+        await deleteServiceRowsForSalon(
+          editingId,
+          barbers.map((b) => b.id)
+        );
       }
 
       await upsertServiceToSupabase(payload);
@@ -214,7 +210,7 @@ export default function SalonServicesPage() {
       await refresh();
     } catch (error) {
       console.error("Failed to save service:", error);
-      alert(getErrorMessage(error, "Failed to save service."));
+      toast.error(getErrorMessage(error, "Failed to save service."));
     }
   }
 
@@ -230,12 +226,13 @@ export default function SalonServicesPage() {
       await refresh();
     } catch (error) {
       console.error("Failed to delete service:", error);
-      alert(getErrorMessage(error, "Failed to delete service."));
+      toast.error(getErrorMessage(error, "Failed to delete service."));
     }
   }
 
   return (
-    <WebShell
+    <PortalShell
+      role="salon"
       title="Salon Services"
       subtitle="Only services assigned to barbers in this salon are shown."
     >
@@ -244,12 +241,8 @@ export default function SalonServicesPage() {
 
         <div className="mt-8 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">
-              Services
-            </p>
-            <h1 className="mt-2 text-4xl font-black tracking-[-0.04em]">
-              Your service menu
-            </h1>
+            <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">Services</p>
+            <h1 className="mt-2 text-4xl font-black tracking-[-0.04em]">Your service menu</h1>
             <p className="mt-2 text-neutral-500">
               {loading ? "Loading…" : `${services.length} service(s) in this salon.`}
             </p>
@@ -348,7 +341,9 @@ export default function SalonServicesPage() {
                   Assign the service only to barbers in this salon.
                 </p>
               </div>
-              <button onClick={() => setOpen(false)} className="text-2xl">×</button>
+              <button onClick={() => setOpen(false)} className="text-2xl">
+                ×
+              </button>
             </div>
 
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -358,9 +353,7 @@ export default function SalonServicesPage() {
                 <span className="text-sm font-black">Category</span>
                 <select
                   value={category}
-                  onChange={(e) =>
-                    setCategory(e.target.value as (typeof CATEGORIES)[number])
-                  }
+                  onChange={(e) => setCategory(e.target.value as (typeof CATEGORIES)[number])}
                   className="h-12 rounded-2xl border border-black/10 bg-neutral-50 px-4"
                 >
                   {CATEGORIES.map((item) => (
@@ -375,18 +368,10 @@ export default function SalonServicesPage() {
                 onChange={setDurationMin}
               />
 
-              <NumberInput
-                label="Price (€)"
-                value={basePriceEuro}
-                onChange={setBasePriceEuro}
-              />
+              <NumberInput label="Price (€)" value={basePriceEuro} onChange={setBasePriceEuro} />
 
               <div className="sm:col-span-2">
-                <Input
-                  label="Description"
-                  value={description}
-                  onChange={setDescription}
-                />
+                <Input label="Description" value={description} onChange={setDescription} />
               </div>
             </div>
 
@@ -435,14 +420,11 @@ export default function SalonServicesPage() {
           </div>
         </div>
       ) : null}
-    </WebShell>
+    </PortalShell>
   );
 }
 
-async function deleteServiceRowsForSalon(
-  baseServiceId: string,
-  salonBarberIds: string[]
-) {
+async function deleteServiceRowsForSalon(baseServiceId: string, salonBarberIds: string[]) {
   if (salonBarberIds.length === 0) return;
 
   const { data, error: loadError } = await supabase
@@ -461,10 +443,7 @@ async function deleteServiceRowsForSalon(
 
   if (rowIds.length === 0) return;
 
-  const { error: deleteError } = await supabase
-    .from("services")
-    .delete()
-    .in("id", rowIds);
+  const { error: deleteError } = await supabase.from("services").delete().in("id", rowIds);
 
   if (deleteError) throw deleteError;
 }
@@ -479,11 +458,21 @@ function getErrorMessage(error: unknown, fallback: string) {
 function PortalNav() {
   return (
     <div className="flex flex-wrap gap-2">
-      <Link href="/portal/salon" className="btn btn-secondary">← Dashboard</Link>
-      <Link href="/portal/salon/bookings" className="btn btn-secondary">Bookings</Link>
-      <Link href="/portal/salon/staff" className="btn btn-secondary">Staff</Link>
-      <Link href="/portal/salon/availability" className="btn btn-secondary">Availability</Link>
-      <Link href="/portal/salon/settings" className="btn btn-secondary">Settings</Link>
+      <Link href="/portal/salon" className="btn btn-secondary">
+        ← Dashboard
+      </Link>
+      <Link href="/portal/salon/bookings" className="btn btn-secondary">
+        Bookings
+      </Link>
+      <Link href="/portal/salon/staff" className="btn btn-secondary">
+        Staff
+      </Link>
+      <Link href="/portal/salon/availability" className="btn btn-secondary">
+        Availability
+      </Link>
+      <Link href="/portal/salon/settings" className="btn btn-secondary">
+        Settings
+      </Link>
     </div>
   );
 }

@@ -13,54 +13,28 @@ export type Intent =
   | "image"
   | "unknown";
 
-function hasPhrase(
-  text: string,
-  phrases: string[]
-) {
-  return phrases.some((phrase) =>
-    text.includes(phrase)
-  );
+function hasPhrase(text: string, phrases: string[]) {
+  return phrases.some((phrase) => text.includes(phrase));
 }
 
-function hasExactWord(
-  text: string,
-  words: string[]
-) {
+function hasExactWord(text: string, words: string[]) {
   return words.some((word) => {
-    const escapedWord =
-      word.replace(
-        /[.*+?^${}()|[\]\\]/g,
-        "\\$&"
-      );
+    const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-    const pattern =
-      new RegExp(
-        `\\b${escapedWord}\\b`,
-        "i"
-      );
+    const pattern = new RegExp(`\\b${escapedWord}\\b`, "i");
 
     return pattern.test(text);
   });
 }
 
-export function detectIntent(
-  message: string
-): Intent {
-  const text =
-    message
-      .toLowerCase()
-      .trim();
+export function detectIntent(message: string): Intent {
+  const text = message.toLowerCase().trim();
 
   //--------------------------------------------------
   // Cancel booking
   //--------------------------------------------------
 
-  if (
-    hasExactWord(text, [
-      "cancel",
-      "delete",
-    ])
-  ) {
+  if (hasExactWord(text, ["cancel", "delete"])) {
     return "cancel_booking";
   }
 
@@ -68,14 +42,7 @@ export function detectIntent(
   // My bookings
   //--------------------------------------------------
 
-  if (
-    hasPhrase(text, [
-      "my booking",
-      "my bookings",
-      "show bookings",
-      "view bookings",
-    ])
-  ) {
+  if (hasPhrase(text, ["my booking", "my bookings", "show bookings", "view bookings"])) {
     return "my_bookings";
   }
 
@@ -83,15 +50,7 @@ export function detectIntent(
   // Booking
   //--------------------------------------------------
 
-  if (
-    hasExactWord(text, [
-      "book",
-      "booking",
-      "appointment",
-      "reserve",
-      "schedule",
-    ])
-  ) {
+  if (hasExactWord(text, ["book", "booking", "appointment", "reserve", "schedule"])) {
     return "booking";
   }
 
@@ -137,14 +96,7 @@ export function detectIntent(
   // Best barber
   //--------------------------------------------------
 
-  if (
-    hasPhrase(text, [
-      "best barber",
-      "highest rated",
-      "top barber",
-      "best rated barber",
-    ])
-  ) {
+  if (hasPhrase(text, ["best barber", "highest rated", "top barber", "best rated barber"])) {
     return "best_barber";
   }
 
@@ -152,13 +104,7 @@ export function detectIntent(
   // Cheapest
   //--------------------------------------------------
 
-  if (
-    hasExactWord(text, [
-      "cheap",
-      "cheapest",
-      "affordable",
-    ])
-  ) {
+  if (hasExactWord(text, ["cheap", "cheapest", "affordable"])) {
     return "cheapest";
   }
 
@@ -167,15 +113,8 @@ export function detectIntent(
   //--------------------------------------------------
 
   if (
-    hasPhrase(text, [
-      "how much",
-      "what does it cost",
-    ]) ||
-    hasExactWord(text, [
-      "price",
-      "cost",
-      "pricing",
-    ])
+    hasPhrase(text, ["how much", "what does it cost"]) ||
+    hasExactWord(text, ["price", "cost", "pricing"])
   ) {
     return "price";
   }
@@ -184,15 +123,7 @@ export function detectIntent(
   // Availability
   //--------------------------------------------------
 
-  if (
-    hasExactWord(text, [
-      "available",
-      "availability",
-      "slot",
-      "slots",
-      "free",
-    ])
-  ) {
+  if (hasExactWord(text, ["available", "availability", "slot", "slots", "free"])) {
     return "availability";
   }
 
@@ -200,14 +131,7 @@ export function detectIntent(
   // Services
   //--------------------------------------------------
 
-  if (
-    hasExactWord(text, [
-      "service",
-      "services",
-      "offer",
-      "offers",
-    ])
-  ) {
+  if (hasExactWord(text, ["service", "services", "offer", "offers"])) {
     return "services";
   }
 
@@ -217,13 +141,7 @@ export function detectIntent(
   // General image intent only.
   //--------------------------------------------------
 
-  if (
-    hasExactWord(text, [
-      "photo",
-      "image",
-      "picture",
-    ])
-  ) {
+  if (hasExactWord(text, ["photo", "image", "picture"])) {
     return "image";
   }
 
@@ -231,15 +149,7 @@ export function detectIntent(
   // Barber search
   //--------------------------------------------------
 
-  if (
-    hasExactWord(text, [
-      "barber",
-      "barbers",
-      "near",
-      "nearby",
-      "area",
-    ])
-  ) {
+  if (hasExactWord(text, ["barber", "barbers", "near", "nearby", "area"])) {
     return "barber_search";
   }
 
@@ -248,16 +158,8 @@ export function detectIntent(
   //--------------------------------------------------
 
   if (
-    hasPhrase(text, [
-      "good morning",
-      "good afternoon",
-      "good evening",
-    ]) ||
-    hasExactWord(text, [
-      "hello",
-      "hi",
-      "hey",
-    ])
+    hasPhrase(text, ["good morning", "good afternoon", "good evening"]) ||
+    hasExactWord(text, ["hello", "hi", "hey"])
   ) {
     return "greeting";
   }

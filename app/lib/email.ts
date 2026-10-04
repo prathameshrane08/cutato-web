@@ -1,12 +1,31 @@
 import { Resend } from "resend";
 
-const resend = new Resend(
-  process.env.RESEND_API_KEY
-);
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-const APP_URL =
-  process.env.NEXT_PUBLIC_APP_URL ||
-  "https://cutato-web.vercel.app";
+// Must be an address on a domain verified in Resend; the resend.dev test
+// sender only delivers to the Resend account owner.
+const EMAIL_FROM = process.env.EMAIL_FROM || "Cutato <onboarding@resend.dev>";
+
+// User-supplied values are interpolated into HTML, so escape them first.
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function escapeFields<T extends object>(input: T): T {
+  return Object.fromEntries(
+    Object.entries(input).map(([key, value]) => [
+      key,
+      typeof value === "string" && key !== "to" ? escapeHtml(value) : value,
+    ])
+  ) as T;
+}
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://cutato-web.vercel.app";
 
 //==================================================
 // TYPES
@@ -63,19 +82,11 @@ type ApprovalEmailInput = {
 // HELPERS
 //==================================================
 
-function money(
-  value: number
-) {
-  return `€${Number(
-    value || 0
-  ).toFixed(2)}`;
+function money(value: number) {
+  return `€${Number(value || 0).toFixed(2)}`;
 }
 
-function row(
-  label: string,
-  value: string,
-  big = false
-) {
+function row(label: string, value: string, big = false) {
   return `
     <div style="margin-bottom:16px;">
       <div
@@ -108,28 +119,17 @@ function row(
 // CUSTOMER BOOKING CONFIRMATION
 //==================================================
 
-export async function sendBookingConfirmationEmail(
-  input: BookingEmailInput
-) {
+export async function sendBookingConfirmationEmail(rawInput: BookingEmailInput) {
+  const input = escapeFields(rawInput);
   try {
-    const {
-      to,
-      customerName,
-      barberName,
-      serviceName,
-      date,
-      time,
-      totalEuro,
-    } = input;
+    const { to, customerName, barberName, serviceName, date, time, totalEuro } = input;
 
     return await resend.emails.send({
-      from:
-        "Cutato <onboarding@resend.dev>",
+      from: EMAIL_FROM,
 
       to,
 
-      subject:
-        `Booking Confirmed • ${serviceName}`,
+      subject: `Booking Confirmed • ${rawInput.serviceName}`,
 
       html: `
         <div
@@ -199,10 +199,7 @@ export async function sendBookingConfirmationEmail(
                   color:#555;
                 "
               >
-                Hi ${
-                  customerName ||
-                  "there"
-                }, your appointment has been successfully booked.
+                Hi ${customerName || "there"}, your appointment has been successfully booked.
               </p>
 
               <div
@@ -214,28 +211,13 @@ export async function sendBookingConfirmationEmail(
                   border:1px solid #eee;
                 "
               >
-                ${row(
-                  "Barber",
-                  barberName
-                )}
+                ${row("Barber", barberName)}
 
-                ${row(
-                  "Service",
-                  serviceName
-                )}
+                ${row("Service", serviceName)}
 
-                ${row(
-                  "Appointment",
-                  `${date} • ${time}`
-                )}
+                ${row("Appointment", `${date} • ${time}`)}
 
-                ${row(
-                  "Total Paid",
-                  money(
-                    totalEuro
-                  ),
-                  true
-                )}
+                ${row("Total Paid", money(totalEuro), true)}
               </div>
 
               <div
@@ -266,10 +248,7 @@ export async function sendBookingConfirmationEmail(
       `,
     });
   } catch (error) {
-    console.error(
-      "BOOKING EMAIL ERROR:",
-      error
-    );
+    console.error("BOOKING EMAIL ERROR:", error);
 
     throw error;
   }
@@ -279,9 +258,8 @@ export async function sendBookingConfirmationEmail(
 // BARBER NEW BOOKING EMAIL
 //==================================================
 
-export async function sendBarberNewBookingEmail(
-  input: BarberBookingEmailInput
-) {
+export async function sendBarberNewBookingEmail(rawInput: BarberBookingEmailInput) {
+  const input = escapeFields(rawInput);
   try {
     const {
       to,
@@ -297,13 +275,11 @@ export async function sendBarberNewBookingEmail(
     } = input;
 
     return await resend.emails.send({
-      from:
-        "Cutato <onboarding@resend.dev>",
+      from: EMAIL_FROM,
 
       to,
 
-      subject:
-        `New Booking • ${serviceName}`,
+      subject: `New Booking • ${rawInput.serviceName}`,
 
       html: `
         <div
@@ -386,42 +362,20 @@ export async function sendBarberNewBookingEmail(
                 "
               >
 
-                ${row(
-                  "Customer",
-                  customerEmail
-                )}
+                ${row("Customer", customerEmail)}
 
-                ${row(
-                  "Service",
-                  serviceName
-                )}
+                ${row("Service", serviceName)}
 
-                ${row(
-                  "Appointment",
-                  `${date} • ${time}`
-                )}
+                ${row("Appointment", `${date} • ${time}`)}
 
-                ${row(
-                  "Payment",
-                  paymentMethod ===
-                    "online"
-                    ? "Paid online"
-                    : "Pay at salon"
-                )}
+                ${row("Payment", paymentMethod === "online" ? "Paid online" : "Pay at salon")}
 
-                ${row(
-                  "Total",
-                  money(
-                    totalEuro
-                  ),
-                  true
-                )}
+                ${row("Total", money(totalEuro), true)}
 
               </div>
 
               ${
-                aiStyle ||
-                haircutBrief
+                aiStyle || haircutBrief
                   ? `
                     <div
                       style="
@@ -512,10 +466,7 @@ export async function sendBarberNewBookingEmail(
       `,
     });
   } catch (error) {
-    console.error(
-      "BARBER EMAIL ERROR:",
-      error
-    );
+    console.error("BARBER EMAIL ERROR:", error);
 
     throw error;
   }
@@ -526,21 +477,15 @@ export async function sendBarberNewBookingEmail(
 // Sent to CUTATO admin
 //==================================================
 
-export async function sendBarberApplicationEmail(
-  input: BarberApplicationInput
-) {
+export async function sendBarberApplicationEmail(rawInput: BarberApplicationInput) {
+  const input = escapeFields(rawInput);
   try {
     return await resend.emails.send({
-      from:
-        "Cutato <onboarding@resend.dev>",
+      from: EMAIL_FROM,
 
-      to:
-        process.env
-          .CUTATO_ADMIN_EMAIL ||
-        "your@email.com",
+      to: process.env.CUTATO_ADMIN_EMAIL || "your@email.com",
 
-      subject:
-        `New Barber Application • ${input.name}`,
+      subject: `New Barber Application • ${rawInput.name}`,
 
       html: `
         <div
@@ -611,39 +556,17 @@ export async function sendBarberApplicationEmail(
                 "
               >
 
-                ${row(
-                  "Name",
-                  input.name
-                )}
+                ${row("Name", input.name)}
 
-                ${row(
-                  "Email",
-                  input.email
-                )}
+                ${row("Email", input.email)}
 
-                ${row(
-                  "Phone",
-                  input.phone ||
-                    "—"
-                )}
+                ${row("Phone", input.phone || "—")}
 
-                ${row(
-                  "City",
-                  input.city ||
-                    "—"
-                )}
+                ${row("City", input.city || "—")}
 
-                ${row(
-                  "Experience",
-                  input.experience ||
-                    "—"
-                )}
+                ${row("Experience", input.experience || "—")}
 
-                ${row(
-                  "Instagram",
-                  input.instagram ||
-                    "—"
-                )}
+                ${row("Instagram", input.instagram || "—")}
 
               </div>
 
@@ -653,10 +576,7 @@ export async function sendBarberApplicationEmail(
       `,
     });
   } catch (error) {
-    console.error(
-      "BARBER APPLICATION EMAIL ERROR:",
-      error
-    );
+    console.error("BARBER APPLICATION EMAIL ERROR:", error);
 
     throw error;
   }
@@ -667,21 +587,15 @@ export async function sendBarberApplicationEmail(
 // Sent to CUTATO admin
 //==================================================
 
-export async function sendSalonApplicationEmail(
-  input: SalonApplicationInput
-) {
+export async function sendSalonApplicationEmail(rawInput: SalonApplicationInput) {
+  const input = escapeFields(rawInput);
   try {
     return await resend.emails.send({
-      from:
-        "Cutato <onboarding@resend.dev>",
+      from: EMAIL_FROM,
 
-      to:
-        process.env
-          .CUTATO_ADMIN_EMAIL ||
-        "your@email.com",
+      to: process.env.CUTATO_ADMIN_EMAIL || "your@email.com",
 
-      subject:
-        `New Salon Application • ${input.salonName}`,
+      subject: `New Salon Application • ${rawInput.salonName}`,
 
       html: `
         <div
@@ -752,38 +666,17 @@ export async function sendSalonApplicationEmail(
                 "
               >
 
-                ${row(
-                  "Salon",
-                  input.salonName
-                )}
+                ${row("Salon", input.salonName)}
 
-                ${row(
-                  "Owner",
-                  input.ownerName
-                )}
+                ${row("Owner", input.ownerName)}
 
-                ${row(
-                  "Email",
-                  input.email
-                )}
+                ${row("Email", input.email)}
 
-                ${row(
-                  "Phone",
-                  input.phone ||
-                    "—"
-                )}
+                ${row("Phone", input.phone || "—")}
 
-                ${row(
-                  "City",
-                  input.city ||
-                    "—"
-                )}
+                ${row("City", input.city || "—")}
 
-                ${row(
-                  "Address",
-                  input.address ||
-                    "—"
-                )}
+                ${row("Address", input.address || "—")}
 
               </div>
 
@@ -793,10 +686,7 @@ export async function sendSalonApplicationEmail(
       `,
     });
   } catch (error) {
-    console.error(
-      "SALON APPLICATION EMAIL ERROR:",
-      error
-    );
+    console.error("SALON APPLICATION EMAIL ERROR:", error);
 
     throw error;
   }
@@ -814,31 +704,22 @@ export async function sendSalonApplicationEmail(
 // failed.
 //==================================================
 
-export async function sendApprovalEmail(
-  input: ApprovalEmailInput
-) {
+export async function sendApprovalEmail(rawInput: ApprovalEmailInput) {
+  const input = escapeFields(rawInput);
   const loginUrl =
-    input.role === "salon"
-      ? `${APP_URL}/portal/salon/login`
-      : `${APP_URL}/portal/barber/login`;
+    input.role === "salon" ? `${APP_URL}/portal/salon/login` : `${APP_URL}/portal/barber/login`;
 
-  const {
-    data,
-    error,
-  } =
-    await resend.emails.send({
-      from:
-        "Cutato <onboarding@resend.dev>",
+  const { data, error } = await resend.emails.send({
+    from: EMAIL_FROM,
 
-      // IMPORTANT:
-      // This is the email entered in the
-      // barber/salon application.
-      to: input.to,
+    // IMPORTANT:
+    // This is the email entered in the
+    // barber/salon application.
+    to: input.to,
 
-      subject:
-        `Your Cutato ${input.role} account is approved`,
+    subject: `Your Cutato ${input.role} account is approved`,
 
-      html: `
+    html: `
         <div
           style="
             font-family:Inter,Arial;
@@ -905,9 +786,7 @@ export async function sendApprovalEmail(
                   color:#555;
                 "
               >
-                Your ${
-                  input.role
-                } application has been approved successfully.
+                Your ${input.role} application has been approved successfully.
               </p>
 
               <p
@@ -918,9 +797,7 @@ export async function sendApprovalEmail(
                   color:#555;
                 "
               >
-                Use the credentials below to sign in to your Cutato ${
-                  input.role
-                } portal.
+                Use the credentials below to sign in to your Cutato ${input.role} portal.
               </p>
 
               <div
@@ -933,15 +810,9 @@ export async function sendApprovalEmail(
                 "
               >
 
-                ${row(
-                  "Login Email",
-                  input.to
-                )}
+                ${row("Login Email", input.to)}
 
-                ${row(
-                  "Temporary Password",
-                  input.temporaryPassword
-                )}
+                ${row("Temporary Password", input.temporaryPassword)}
 
               </div>
 
@@ -964,12 +835,7 @@ export async function sendApprovalEmail(
                     font-weight:800;
                   "
                 >
-                  Open ${
-                    input.role ===
-                    "salon"
-                      ? "Salon"
-                      : "Barber"
-                  } Portal
+                  Open ${input.role === "salon" ? "Salon" : "Barber"} Portal
                 </a>
 
               </div>
@@ -994,7 +860,7 @@ export async function sendApprovalEmail(
           </div>
         </div>
       `,
-    });
+  });
 
   //------------------------------------------------
   // IMPORTANT:
@@ -1003,22 +869,15 @@ export async function sendApprovalEmail(
   //------------------------------------------------
 
   if (error) {
-    console.error(
-      "APPROVAL EMAIL ERROR:",
-      {
-        recipient:
-          input.to,
+    console.error("APPROVAL EMAIL ERROR:", {
+      recipient: input.to,
 
-        role:
-          input.role,
+      role: input.role,
 
-        error,
-      }
-    );
+      error,
+    });
 
-    throw new Error(
-      `Approval email failed: ${error.message}`
-    );
+    throw new Error(`Approval email failed: ${error.message}`);
   }
 
   //------------------------------------------------
@@ -1027,19 +886,13 @@ export async function sendApprovalEmail(
   // Do NOT log the temporary password.
   //------------------------------------------------
 
-  console.log(
-    "APPROVAL EMAIL SENT:",
-    {
-      recipient:
-        input.to,
+  console.log("APPROVAL EMAIL SENT:", {
+    recipient: input.to,
 
-      role:
-        input.role,
+    role: input.role,
 
-      emailId:
-        data?.id,
-    }
-  );
+    emailId: data?.id,
+  });
 
   return data;
 }

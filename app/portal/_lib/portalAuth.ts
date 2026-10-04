@@ -1,36 +1,25 @@
 "use client";
 
-import {
-  getAuthUser,
-  type UserRole,
-} from "@/app/Components/auth";
+import { getAuthUser, type UserRole } from "@/app/Components/auth";
 
-export function requireRole(
-  expectedRole: UserRole
-) {
-  const user =
-    getAuthUser();
+export function requireRole(expectedRole: UserRole) {
+  const user = getAuthUser();
 
   if (!user) {
     return {
       ok: false as const,
 
-      reason:
-        "not_logged_in" as const,
+      reason: "not_logged_in" as const,
 
       user: null,
     };
   }
 
-  if (
-    user.role !==
-    expectedRole
-  ) {
+  if (user.role !== expectedRole) {
     return {
       ok: false as const,
 
-      reason:
-        "wrong_role" as const,
+      reason: "wrong_role" as const,
 
       user,
     };
@@ -44,21 +33,15 @@ export function requireRole(
 }
 
 export function requireSalonAuth() {
-  return requireRole(
-    "salon"
-  );
+  return requireRole("salon");
 }
 
 export function requireBarberAuth() {
-  return requireRole(
-    "barber"
-  );
+  return requireRole("barber");
 }
 
 export function requireCustomerAuth() {
-  return requireRole(
-    "customer"
-  );
+  return requireRole("customer");
 }
 
 export function requirePortalSalonAuth() {

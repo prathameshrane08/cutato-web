@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import WebShell from "@/app/Components/WebShell";
-import { requireSalonAuth } from "@/app/portal/_lib/portalAuth";
+import { useMemo, useState } from "react";
+import PortalShell from "@/app/Components/portal/PortalShell";
+import RoleGate from "@/app/Components/portal/RoleGate";
+import type { AuthUser } from "@/app/Components/auth";
 import {
   emptySalonAvailability,
   readSalonAvailabilityForSalon,
@@ -12,6 +13,7 @@ import {
   type DayRule,
   type SalonAvailability,
 } from "@/app/lib/availabilityStore";
+import { toast } from "@/app/lib/toast";
 
 const DAYS: { key: DayName; label: string }[] = [
   { key: "mon", label: "Monday" },
@@ -24,41 +26,26 @@ const DAYS: { key: DayName; label: string }[] = [
 ];
 
 export default function SalonAvailabilityPage() {
-  const auth = requireSalonAuth();
+  return (
+    <RoleGate role="salon" title="Availability">
+      {(user) => <SalonAvailabilityContent user={user} />}
+    </RoleGate>
+  );
+}
 
-  if (!auth.ok) {
-    return (
-      <WebShell title="Access denied" subtitle="Salon account required.">
-        <div className="mx-auto max-w-4xl rounded-[28px] border border-black/10 bg-white p-8">
-          This page is only available for salon accounts.
-        </div>
-      </WebShell>
-    );
-  }
+function SalonAvailabilityContent({ user }: { user: AuthUser }) {
+  const salonId = user.salonId ?? "";
 
-  const salonId = auth.user.salonId ?? "";
+  const [initial] = useState(() => {
+    const saved = salonId ? readSalonAvailabilityForSalon(salonId) : null;
+    return {
+      availability: salonId ? (saved ?? emptySalonAvailability()) : null,
+      configured: Boolean(saved),
+    };
+  });
 
-  const [availability, setAvailability] =
-    useState<SalonAvailability | null>(null);
-  const [configured, setConfigured] = useState(false);
-
-  useEffect(() => {
-    if (!salonId) {
-      setAvailability(null);
-      setConfigured(false);
-      return;
-    }
-
-    const saved = readSalonAvailabilityForSalon(salonId);
-
-    if (saved) {
-      setAvailability(saved);
-      setConfigured(true);
-    } else {
-      setAvailability(emptySalonAvailability());
-      setConfigured(false);
-    }
-  }, [salonId]);
+  const [availability, setAvailability] = useState<SalonAvailability | null>(initial.availability);
+  const [configured, setConfigured] = useState(initial.configured);
 
   const openDays = useMemo(() => {
     if (!availability) return 0;
@@ -105,7 +92,7 @@ export default function SalonAvailabilityPage() {
 
   function save() {
     if (!salonId || !availability) {
-      alert("Your account is not linked to a salon.");
+      toast.error("Your account is not linked to a salon.");
       return;
     }
 
@@ -113,21 +100,22 @@ export default function SalonAvailabilityPage() {
     setAvailability(readSalonAvailabilityForSalon(salonId));
     setConfigured(true);
 
-    alert("Salon availability saved.");
+    toast.success("Salon availability saved.");
   }
 
   if (!availability) {
     return (
-      <WebShell title="Availability" subtitle="Loading salon availability...">
+      <PortalShell role="salon" title="Availability" subtitle="Loading salon availability...">
         <div className="mx-auto max-w-6xl rounded-[28px] border border-black/10 bg-white p-8">
           Loading...
         </div>
-      </WebShell>
+      </PortalShell>
     );
   }
 
   return (
-    <WebShell
+    <PortalShell
+      role="salon"
       title="Availability"
       subtitle="Weekly opening hours for this salon only."
     >
@@ -139,13 +127,10 @@ export default function SalonAvailabilityPage() {
             <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff355d]">
               Not configured yet
             </p>
-            <h2 className="mt-2 text-2xl font-black">
-              This salon has no saved availability.
-            </h2>
+            <h2 className="mt-2 text-2xl font-black">This salon has no saved availability.</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-600">
-              A newly created salon now starts empty instead of inheriting the
-              old demo schedule. Open the days you want, or use typical hours
-              as a starting point.
+              A newly created salon now starts empty instead of inheriting the old demo schedule.
+              Open the days you want, or use typical hours as a starting point.
             </p>
 
             <button
@@ -210,9 +195,7 @@ export default function SalonAvailabilityPage() {
                   </div>
 
                   <label className="grid gap-1">
-                    <span className="text-xs font-black uppercase text-neutral-400">
-                      Start
-                    </span>
+                    <span className="text-xs font-black uppercase text-neutral-400">Start</span>
                     <input
                       type="time"
                       disabled={!rule.open}
@@ -227,9 +210,7 @@ export default function SalonAvailabilityPage() {
                   </label>
 
                   <label className="grid gap-1">
-                    <span className="text-xs font-black uppercase text-neutral-400">
-                      End
-                    </span>
+                    <span className="text-xs font-black uppercase text-neutral-400">End</span>
                     <input
                       type="time"
                       disabled={!rule.open}
@@ -266,18 +247,28 @@ export default function SalonAvailabilityPage() {
           </div>
         </section>
       </div>
-    </WebShell>
+    </PortalShell>
   );
 }
 
 function PortalNav() {
   return (
     <div className="flex flex-wrap gap-2">
-      <Link href="/portal/salon" className="btn btn-secondary">← Dashboard</Link>
-      <Link href="/portal/salon/bookings" className="btn btn-secondary">Bookings</Link>
-      <Link href="/portal/salon/staff" className="btn btn-secondary">Staff</Link>
-      <Link href="/portal/salon/services" className="btn btn-secondary">Services</Link>
-      <Link href="/portal/salon/settings" className="btn btn-secondary">Settings</Link>
+      <Link href="/portal/salon" className="btn btn-secondary">
+        ← Dashboard
+      </Link>
+      <Link href="/portal/salon/bookings" className="btn btn-secondary">
+        Bookings
+      </Link>
+      <Link href="/portal/salon/staff" className="btn btn-secondary">
+        Staff
+      </Link>
+      <Link href="/portal/salon/services" className="btn btn-secondary">
+        Services
+      </Link>
+      <Link href="/portal/salon/settings" className="btn btn-secondary">
+        Settings
+      </Link>
     </div>
   );
 }
@@ -285,9 +276,7 @@ function PortalNav() {
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-[24px] border border-black/10 bg-white p-5">
-      <p className="text-xs font-black uppercase tracking-[0.16em] text-neutral-400">
-        {label}
-      </p>
+      <p className="text-xs font-black uppercase tracking-[0.16em] text-neutral-400">{label}</p>
       <p className="mt-2 text-2xl font-black">{value}</p>
     </div>
   );

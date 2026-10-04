@@ -2,12 +2,7 @@
 
 import { emitStoreUpdate } from "@/app/lib/storeEvents";
 
-export type BookingStatus =
-  | "pending"
-  | "confirmed"
-  | "completed"
-  | "cancelled"
-  | "no_show";
+export type BookingStatus = "pending" | "confirmed" | "completed" | "cancelled" | "no_show";
 
 export type PaymentMethod = "online" | "salon";
 export type Demand = "quiet" | "normal" | "busy";
@@ -70,9 +65,7 @@ function normalizeBooking(b: Booking): Booking {
     time: String(b.time),
     reservedTimes: Array.isArray(b.reservedTimes) ? b.reservedTimes.map(String) : [],
     demand:
-      b.demand === "quiet" || b.demand === "busy" || b.demand === "normal"
-        ? b.demand
-        : "normal",
+      b.demand === "quiet" || b.demand === "busy" || b.demand === "normal" ? b.demand : "normal",
     basePriceEuro: Number(b.basePriceEuro || 0),
     servicePriceEuro: Number(b.servicePriceEuro || 0),
     tipEuro: Number(b.tipEuro || 0),

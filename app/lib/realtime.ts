@@ -7,21 +7,16 @@ export function subscribeToBookings(callback: () => void, filter?: string) {
     .toString(16)
     .slice(2)}`;
 
-  const config: any = {
-    event: "*",
+  const config = {
+    event: "*" as const,
     schema: "public",
     table: "bookings",
+    ...(filter ? { filter } : {}),
   };
 
-  if (filter) {
-    config.filter = filter;
-  }
-
-  const channel = supabase
-    .channel(channelName)
-    .on("postgres_changes", config, () => {
-      callback();
-    });
+  const channel = supabase.channel(channelName).on("postgres_changes", config, () => {
+    callback();
+  });
 
   channel.subscribe();
 

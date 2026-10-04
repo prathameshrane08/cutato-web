@@ -7,9 +7,7 @@ type PhotoUploaderProps = {
   onImageSelected: (base64: string) => void;
 };
 
-export default function PhotoUploader({
-  onImageSelected,
-}: PhotoUploaderProps) {
+export default function PhotoUploader({ onImageSelected }: PhotoUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [preview, setPreview] = useState<string | null>(null);
@@ -18,9 +16,7 @@ export default function PhotoUploader({
     inputRef.current?.click();
   }
 
-  function handleFileChange(
-    event: ChangeEvent<HTMLInputElement>
-  ) {
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
 
     if (!file) return;
@@ -40,14 +36,7 @@ export default function PhotoUploader({
 
   return (
     <div className="mx-auto max-w-xl">
-
-      <input
-        ref={inputRef}
-        hidden
-        type="file"
-        accept="image/*"
-        onChange={handleFileChange}
-      />
+      <input ref={inputRef} hidden type="file" accept="image/*" onChange={handleFileChange} />
 
       <button
         type="button"
@@ -66,9 +55,7 @@ export default function PhotoUploader({
           <>
             <div className="text-6xl">📷</div>
 
-            <h2 className="mt-6 text-2xl font-bold">
-              Upload your photo
-            </h2>
+            <h2 className="mt-6 text-2xl font-bold">Upload your photo</h2>
 
             <p className="mt-3 text-center text-neutral-500">
               Front-facing photo with good lighting works best.

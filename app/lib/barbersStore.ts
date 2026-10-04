@@ -1,7 +1,7 @@
 "use client";
 
-import { emitStoreUpdate, subscribeStoreUpdates } from "@/app/lib/storeEvents";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { emitStoreUpdate } from "@/app/lib/storeEvents";
+import { useCallback, useMemo, useState } from "react";
 /**
  * Unified Barber store
  * - Persists to localStorage
@@ -212,10 +212,7 @@ export function ensureCustomerBarbersSeeded() {
   }
 
   if (changed) {
-    localStorage.setItem(
-      LS_KEY,
-      JSON.stringify(Array.from(byId.values()).map(normalizeBarber))
-    );
+    localStorage.setItem(LS_KEY, JSON.stringify(Array.from(byId.values()).map(normalizeBarber)));
     emitStoreUpdate(LS_KEY);
   }
 }
@@ -250,24 +247,23 @@ export function useCustomerBarbers() {
   const [barbers, setBarbers] = useState<CustomerBarber[]>([]);
 
   const refresh = useCallback(() => {
-  setBarbers(readCustomerBarbers());
-}, []);
+    setBarbers(readCustomerBarbers());
+  }, []);
 
-const upsert = useCallback((b: CustomerBarber) => {
-  setBarbers(upsertBarber(b));
-}, []);
+  const upsert = useCallback((b: CustomerBarber) => {
+    setBarbers(upsertBarber(b));
+  }, []);
 
-const remove = useCallback((id: string) => {
-  setBarbers(removeBarber(id));
-}, []);
+  const remove = useCallback((id: string) => {
+    setBarbers(removeBarber(id));
+  }, []);
 
-const setAll = useCallback((list: CustomerBarber[]) => {
-  writeCustomerBarbers(list);
-  setBarbers(list.map(normalizeBarber));
-}, []);
+  const setAll = useCallback((list: CustomerBarber[]) => {
+    writeCustomerBarbers(list);
+    setBarbers(list.map(normalizeBarber));
+  }, []);
 
   const byId = useMemo(() => new Map(barbers.map((b) => [b.id, b])), [barbers]);
-
 
   return {
     barbers,

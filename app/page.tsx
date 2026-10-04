@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   CalendarCheck,
@@ -12,153 +11,239 @@ import {
   ShieldCheck,
   Sparkles,
   Star,
+  Store,
   Users,
   Wallet,
 } from "lucide-react";
-import HairstyleAI from "@/app/Components/HairstyleAI";
+
 import WebShell from "@/app/Components/WebShell";
 import ChatBot from "@/app/Components/ChatBot";
-import type { CustomerBarber } from "@/app/lib/barbersStore";
-import {
-  getBarbersFromSupabase,
-  type SupabaseBarber,
-} from "@/app/lib/barbersSupabase";
-import { generateSlotsForDate } from "@/app/lib/availabilityStore";
-import { readSalonSettings } from "@/app/lib/salonSettingsStore";
-import { fmtMoney } from "@/app/lib/formatters";
-import {
-  getServicesFromSupabase,
-  type Service,
-} from "@/app/lib/servicesStore";
+import { supabase } from "@/app/lib/supabase";
 
-function dayKey(d: Date) {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
+type SalonRow = {
+  id: string;
+  name: string;
+  city?: string | null;
+  address?: string | null;
+  active?: boolean | null;
+};
 
-function demandForTime(time: string): "quiet" | "normal" | "busy" {
-  const [h] = time.split(":").map(Number);
-  if (h >= 17) return "busy";
-  if (h < 11) return "quiet";
-  return "normal";
-}
+type BarberRatingRow = {
+  id: string;
+  name?: string | null;
+  area?: string | null;
+  salon_id?: string | null;
+  rating?: number | null;
+  reviews?: number | null;
+  active?: boolean | null;
+};
 
-function calcDynamicPriceEuro(
-  base: number,
-  demand: "quiet" | "normal" | "busy"
-) {
-  const mult = demand === "busy" ? 1.2 : demand === "quiet" ? 0.85 : 1;
-  return Math.round(base * mult * 100) / 100;
-}
+type IndependentBarber = {
+  id: string;
+  name: string;
+  city: string;
+  rating: number;
+  reviews: number;
+};
+
+type FeaturedSalon = {
+  id: string;
+  name: string;
+  city: string;
+  address: string;
+  rating: number;
+  reviews: number;
+  barberCount: number;
+};
 
 export default function HomePage() {
-  const searchParams = useSearchParams();
+  const [salons, setSalons] = useState<FeaturedSalon[]>([]);
+  const [loadingSalons, setLoadingSalons] = useState(true);
 
-  const selectedHairstyle = searchParams.get("hairstyle") || "";
-  const recommendationId = searchParams.get("recommendationId") || "";
+  const [independentBarbers, setIndependentBarbers] = useState<IndependentBarber[]>([]);
+  const [loadingIndependentBarbers, setLoadingIndependentBarbers] = useState(true);
 
-  const [barbers, setBarbers] = useState<CustomerBarber[]>([]);
-  const [tick] = useState(0);
-
-  async function loadBarbers() {
-    try {
-      const rows = await getBarbersFromSupabase();
-      console.log("SUPABASE BARBERS:", rows);
-
-      const mapped: CustomerBarber[] = rows.map((b: SupabaseBarber) => ({
-      id: b.id,
-      name: b.name,
-      area: b.area,
-      address: b.address,
-      distKm: Number(b.dist_km ?? 0),
-      rating: Number(b.rating ?? 0),
-      reviews: Number(b.reviews ?? 0),
-
-      tagline: b.tagline ?? undefined,
-      about: b.about ?? undefined,
-
-      imageUrl: b.image_url ?? undefined,
-      speciality: b.speciality ?? undefined,
-
-      active: b.active ?? true,
-    }));
-
-      setBarbers(mapped);
-    } catch (error) {
-      console.error("Failed to load homepage barbers:", error);
-    }
-  }
+  const [salonsFailed, setSalonsFailed] = useState(false);
+  const [barbersFailed, setBarbersFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    loadBarbers();
-  }, []);
+    let cancelled = false;
 
-  const salon = useMemo(() => readSalonSettings(), []);
-  const today = useMemo(() => dayKey(new Date()), []);
+    async function loadTopSalons() {
+      try {
+        setLoadingSalons(true);
+        setSalonsFailed(false);
 
-  const visibleBarbers = useMemo(
-    () =>
-      barbers
-        .filter((b) => b.active !== false && b.name)
-        .slice()
-        .sort((a, b) => {
-          const ratingDiff = Number(b.rating ?? 0) - Number(a.rating ?? 0);
-          if (ratingDiff !== 0) return ratingDiff;
-          return Number(a.distKm ?? 0) - Number(b.distKm ?? 0);
-        }),
-    [barbers]
+        // 1. Load active salons.
+        const { data: salonRows, error: salonError } = await supabase
+          .from("salons")
+          .select("id, name, city, address, active")
+          .eq("active", true);
+
+        if (salonError) {
+          throw new Error(salonError.message);
+        }
+
+        // 2. Load barber ratings so we can calculate a real-data salon score.
+        // For now, salon rating = review-weighted rating of active barbers
+        // belonging to that salon.
+        const { data: barberRows, error: barberError } = await supabase
+          .from("barbers")
+          .select("id, salon_id, rating, reviews, active")
+          .eq("active", true)
+          .not("salon_id", "is", null);
+
+        if (barberError) {
+          throw new Error(barberError.message);
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        const typedSalons = (salonRows ?? []) as SalonRow[];
+        const typedBarbers = (barberRows ?? []) as BarberRatingRow[];
+
+        const ranked: FeaturedSalon[] = typedSalons
+          .map((salon) => {
+            const salonBarbers = typedBarbers.filter((barber) => barber.salon_id === salon.id);
+
+            const ratedBarbers = salonBarbers.filter((barber) => Number(barber.reviews ?? 0) > 0);
+
+            const totalReviews = ratedBarbers.reduce(
+              (sum, barber) => sum + Number(barber.reviews ?? 0),
+              0
+            );
+
+            const weightedRating =
+              totalReviews > 0
+                ? ratedBarbers.reduce(
+                    (sum, barber) => sum + Number(barber.rating ?? 0) * Number(barber.reviews ?? 0),
+                    0
+                  ) / totalReviews
+                : 0;
+
+            return {
+              id: salon.id,
+              name: salon.name,
+              city: salon.city || "Dresden",
+              address: salon.address || salon.city || "Address not added yet",
+              rating: weightedRating,
+              reviews: totalReviews,
+              barberCount: salonBarbers.length,
+            };
+          })
+          .sort((first, second) => {
+            // Primary ranking: rating.
+            if (second.rating !== first.rating) {
+              return second.rating - first.rating;
+            }
+
+            // Tie-breaker: number of real reviews.
+            if (second.reviews !== first.reviews) {
+              return second.reviews - first.reviews;
+            }
+
+            return second.barberCount - first.barberCount;
+          })
+          .slice(0, 4);
+
+        setSalons(ranked);
+      } catch (error) {
+        console.error("Failed to load homepage salons:", error);
+        if (!cancelled) {
+          setSalons([]);
+          setSalonsFailed(true);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingSalons(false);
+        }
+      }
+    }
+
+    void loadTopSalons();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadIndependentBarbers() {
+      try {
+        setLoadingIndependentBarbers(true);
+        setBarbersFailed(false);
+
+        const { data, error } = await supabase
+          .from("barbers")
+          .select("id, name, area, salon_id, rating, reviews, active")
+          .eq("active", true)
+          .is("salon_id", null)
+          .order("rating", { ascending: false })
+          .order("reviews", { ascending: false });
+
+        if (error) {
+          throw new Error(error.message);
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        const rows = (data ?? []) as BarberRatingRow[];
+
+        setIndependentBarbers(
+          rows.map((barber) => ({
+            id: barber.id,
+            name: barber.name || "CUTATO Barber",
+            city: barber.area || "Dresden",
+            rating: Number(barber.rating ?? 0),
+            reviews: Number(barber.reviews ?? 0),
+          }))
+        );
+      } catch (error) {
+        console.error("Failed to load independent homepage barbers:", error);
+        if (!cancelled) {
+          setIndependentBarbers([]);
+          setBarbersFailed(true);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingIndependentBarbers(false);
+        }
+      }
+    }
+
+    void loadIndependentBarbers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
+
+  const ratedSalonCount = useMemo(
+    () => salons.filter((salon) => salon.rating > 0).length,
+    [salons]
   );
-
-  const featuredBarbers = visibleBarbers.slice(0, 4);
 
   return (
     <>
-      <WebShell
-        title={salon.salonName || "Cutato"}
-        subtitle="Premium barber booking for customers, barbers and salons."
-      >
-        <main className="mx-auto max-w-7xl px-4 pb-20">
-          <HeroSection
-            barberCount={visibleBarbers.length}
-            currency={salon.currency || "EUR"}
-            timezone={salon.timezone || "Europe/Berlin"}
-          />
-
-          <div className="mt-8">
-            <HairstyleAI />
-          </div>
+      <WebShell>
+        <div className="mx-auto max-w-7xl px-4 pb-20">
+          <HeroSection salonCount={salons.length} ratedSalonCount={ratedSalonCount} />
 
           <HowItWorks />
 
-          {selectedHairstyle ? (
-            <div className="mt-10 rounded-[28px] border border-[#ff355d]/20 bg-[#ff355d]/5 p-5">
-              <div className="flex items-start gap-3">
-                <div className="rounded-2xl bg-[#ff355d]/10 p-3 text-[#ff355d]">
-                  <Sparkles size={20} />
-                </div>
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff355d]">
-                    Hairstyle selected
-                  </p>
-                  <h2 className="mt-1 text-2xl font-black text-neutral-950">
-                    {selectedHairstyle}
-                  </h2>
-                  <p className="mt-1 text-sm text-neutral-500">
-                    Choose a barber below to continue with this hairstyle.
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          <section id="featured-barbers" className="mt-24">
+          <section id="featured-salons" className="mt-24">
             <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
               <SectionHeader
-                eyebrow="Featured professionals"
-                title="Top barbers available today"
-                subtitle="Browse live barber profiles, prices, ratings and available slots."
+                eyebrow="Top-rated salons"
+                title="Top salons on CUTATO"
+                subtitle="Discover salons ranked by real barber-review data, with higher-rated salons shown first."
               />
 
               <Link
@@ -169,34 +254,73 @@ export default function HomePage() {
               </Link>
             </div>
 
-            {featuredBarbers.length === 0 ? (
+            {loadingSalons ? (
+              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <SalonSkeleton key={index} />
+                ))}
+              </div>
+            ) : salonsFailed ? (
+              <LoadError label="salons" onRetry={() => setReloadKey((key) => key + 1)} />
+            ) : salons.length === 0 ? (
               <div className="rounded-[28px] border border-black/10 bg-white p-8 shadow-sm">
-                <div className="text-xl font-black">No barbers available yet</div>
+                <div className="text-xl font-black">No salons available yet</div>
                 <p className="mt-2 text-sm text-neutral-500">
-                  A salon owner needs to add barbers first.
+                  Approved salons will appear here automatically.
                 </p>
               </div>
             ) : (
               <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-                {featuredBarbers.map((barber) => (
-                  <FeaturedBarberCard
-                    key={`${barber.id}_${tick}`}
-                    barber={barber}
-                    today={today}
-                    currency={salon.currency}
-                    tick={tick}
-                    selectedHairstyle={selectedHairstyle}
-                    recommendationId={recommendationId}
-                  />
+                {salons.map((salon, index) => (
+                  <FeaturedSalonCard key={salon.id} salon={salon} rank={index + 1} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section id="independent-barbers" className="mt-24">
+            <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+              <SectionHeader
+                eyebrow="Independent & home-service barbers"
+                title="Book a barber directly"
+                subtitle="Prefer a more flexible experience? Discover independent CUTATO barbers for direct appointments and home-service grooming."
+              />
+
+              <Link
+                href="/book"
+                className="rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-bold shadow-sm transition hover:-translate-y-0.5 hover:bg-neutral-50"
+              >
+                Explore booking
+              </Link>
+            </div>
+
+            {loadingIndependentBarbers ? (
+              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <BarberSkeleton key={index} />
+                ))}
+              </div>
+            ) : barbersFailed ? (
+              <LoadError label="barbers" onRetry={() => setReloadKey((key) => key + 1)} />
+            ) : independentBarbers.length === 0 ? (
+              <div className="rounded-[28px] border border-black/10 bg-white p-8 shadow-sm">
+                <div className="text-xl font-black">No independent barbers available yet</div>
+                <p className="mt-2 text-sm text-neutral-500">
+                  Approved independent barbers will appear here automatically.
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                {independentBarbers.map((barber) => (
+                  <IndependentBarberCard key={barber.id} barber={barber} />
                 ))}
               </div>
             )}
           </section>
 
           <AudienceSection />
-
           <FinalCTA />
-        </main>
+        </div>
       </WebShell>
 
       <ChatBot />
@@ -204,14 +328,31 @@ export default function HomePage() {
   );
 }
 
+function LoadError({ label, onRetry }: { label: string; onRetry: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-4 rounded-[28px] border border-black/10 bg-white p-8 shadow-sm">
+      <div>
+        <div className="text-xl font-black">We couldn&apos;t load {label} right now</div>
+        <p className="mt-2 text-sm text-neutral-500">Please check your connection and try again.</p>
+      </div>
+
+      <button
+        type="button"
+        onClick={onRetry}
+        className="rounded-full bg-neutral-950 px-6 py-3 text-sm font-black text-white transition hover:bg-neutral-800"
+      >
+        Try again
+      </button>
+    </div>
+  );
+}
+
 function HeroSection({
-  barberCount,
-  currency,
-  timezone,
+  salonCount,
+  ratedSalonCount,
 }: {
-  barberCount: number;
-  currency: string;
-  timezone: string;
+  salonCount: number;
+  ratedSalonCount: number;
 }) {
   return (
     <section className="relative overflow-hidden rounded-[44px] bg-neutral-950 px-6 py-10 text-white shadow-[0_28px_90px_rgba(0,0,0,0.22)] md:px-12 md:py-16">
@@ -222,16 +363,16 @@ function HeroSection({
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-black text-white/80 backdrop-blur">
             <Sparkles size={15} className="text-[#ff355d]" />
-            Live slots • Smart pricing • Barber discovery
+            Top-rated salons • Live booking • Smart discovery
           </div>
 
           <h1 className="mt-7 max-w-4xl text-5xl font-black leading-[0.92] tracking-[-0.06em] md:text-7xl">
-            Find and book your perfect barber.
+            Find your perfect salon.
           </h1>
 
           <p className="mt-6 max-w-2xl text-lg leading-8 text-white/60">
-            Compare trusted barbers, check live availability, see transparent
-            prices and confirm your next haircut in minutes.
+            Compare trusted salons, discover their barbers, check availability and book your next
+            grooming appointment in minutes.
           </p>
 
           <div className="mt-8 rounded-[28px] border border-white/10 bg-white p-2 shadow-2xl">
@@ -253,7 +394,7 @@ function HeroSection({
               </div>
 
               <Link
-                href="#featured-barbers"
+                href="#featured-salons"
                 className="inline-flex items-center justify-center gap-2 rounded-[22px] bg-[#ff355d] px-6 py-4 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:bg-[#ff1f4c]"
               >
                 Search <ArrowRight size={17} />
@@ -262,54 +403,40 @@ function HeroSection({
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
-  <Link
-    href="/hairstyle-advisor"
-    className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-4 text-sm font-black text-neutral-950 shadow-lg transition hover:-translate-y-0.5 hover:bg-neutral-100"
-  >
-    <Sparkles size={17} className="text-[#ff355d]" />
-    Find my hairstyle
-  </Link>
+            <Link
+              href="/hairstyle-advisor"
+              className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-4 text-sm font-black text-neutral-950 shadow-lg transition hover:-translate-y-0.5 hover:bg-neutral-100"
+            >
+              <Sparkles size={17} className="text-[#ff355d]" />
+              Find my hairstyle
+            </Link>
 
-  <Link
-    href="/book-ai"
-    className="rounded-full bg-[#ff355d] px-6 py-4 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:-translate-y-0.5 hover:bg-[#ff1f4c]"
-  >
-    Book with AI
-  </Link>
+            <Link
+              href="/book-ai"
+              className="rounded-full bg-[#ff355d] px-6 py-4 text-sm font-black text-white shadow-lg shadow-[#ff355d]/25 transition hover:-translate-y-0.5 hover:bg-[#ff1f4c]"
+            >
+              Book with AI
+            </Link>
 
-  <Link
-    href="/portal/barber/apply"
-    className="rounded-full border border-white/15 bg-white/10 px-6 py-4 text-sm font-black text-white backdrop-blur transition hover:bg-white hover:text-neutral-950"
-  >
-    Become a barber
-  </Link>
+            <Link
+              href="/portal/barber/apply"
+              className="rounded-full border border-white/15 bg-white/10 px-6 py-4 text-sm font-black text-white backdrop-blur transition hover:bg-white hover:text-neutral-950"
+            >
+              Become a barber
+            </Link>
 
-  <Link
-    href="/portal/salon/apply"
-    className="rounded-full border border-white/15 bg-white/10 px-6 py-4 text-sm font-black text-white backdrop-blur transition hover:bg-white hover:text-neutral-950"
-  >
-    Register salon
-  </Link>
-</div>
-
-<div className="mt-5 flex flex-wrap gap-2">
-  {["Haircut", "Beard trim", "Fade", "Styling", "Premium cut"].map(
-    (item) => (
-      <Link
-        key={item}
-        href="#featured-barbers"
-        className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-black text-white/70 transition hover:bg-white hover:text-neutral-950"
-      >
-        {item}
-      </Link>
-    )
-  )}
-</div>
+            <Link
+              href="/portal/salon/apply"
+              className="rounded-full border border-white/15 bg-white/10 px-6 py-4 text-sm font-black text-white backdrop-blur transition hover:bg-white hover:text-neutral-950"
+            >
+              Register salon
+            </Link>
+          </div>
 
           <div className="mt-8 grid max-w-xl grid-cols-3 gap-3">
-            <MiniStatDark label="Barbers" value={String(barberCount)} />
-            <MiniStatDark label="Currency" value={currency} />
-            <MiniStatDark label="Timezone" value={timezone.replace("Europe/", "")} />
+            <MiniStatDark label="Top salons" value={String(salonCount)} />
+            <MiniStatDark label="Rated" value={String(ratedSalonCount)} />
+            <MiniStatDark label="Booking" value="Live" />
           </div>
         </div>
 
@@ -319,19 +446,34 @@ function HeroSection({
               <div className="mb-5 flex items-center justify-between">
                 <div>
                   <p className="text-xs font-black uppercase tracking-widest text-[#ff355d]">
-                    Live preview
+                    Discover
                   </p>
-                  <h3 className="mt-1 text-2xl font-black">Available today</h3>
+                  <h3 className="mt-1 text-2xl font-black">Top-rated salons</h3>
                 </div>
+
                 <div className="rounded-full bg-[#ff355d]/10 p-3 text-[#ff355d]">
-                  <CalendarCheck />
+                  <Store />
                 </div>
               </div>
 
               <div className="grid gap-3">
-                <HeroSlot time="10:30" name="Classic haircut" price="€18.00" quiet />
-                <HeroSlot time="14:00" name="Haircut + beard" price="€28.00" />
-                <HeroSlot time="18:30" name="Premium styling" price="€36.00" busy />
+                <HeroFeature
+                  icon={<Star size={18} />}
+                  title="Ratings first"
+                  text="Highest-rated salons are promoted first."
+                />
+
+                <HeroFeature
+                  icon={<Users size={18} />}
+                  title="Salon teams"
+                  text="Discover the barbers working inside each salon."
+                />
+
+                <HeroFeature
+                  icon={<CalendarCheck size={18} />}
+                  title="Live booking"
+                  text="Continue directly into CUTATO's booking flow."
+                />
               </div>
 
               <div className="mt-5 rounded-[28px] bg-neutral-950 p-5 text-white">
@@ -339,19 +481,13 @@ function HeroSection({
                   <div className="rounded-2xl bg-white/10 p-3 text-[#ff355d]">
                     <Star className="fill-[#ff355d]" />
                   </div>
+
                   <div>
-                    <p className="text-sm text-white/50">Recommended</p>
-                    <p className="font-black">Top-rated barber near you</p>
+                    <p className="text-sm text-white/50">Ranked by</p>
+                    <p className="font-black">Rating + review confidence</p>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-
-          <div className="absolute -bottom-5 -left-5 hidden rounded-3xl border border-black/10 bg-white p-4 text-neutral-950 shadow-xl md:block">
-            <div className="flex items-center gap-2">
-              <Star className="fill-[#ff355d] text-[#ff355d]" size={18} />
-              <span className="font-black">4.9 average rating</span>
             </div>
           </div>
         </div>
@@ -363,24 +499,24 @@ function HeroSection({
 function HowItWorks() {
   const steps = [
     {
-      icon: <Scissors size={22} />,
-      title: "Choose service",
-      text: "Pick haircut, beard trim, styling or a combo service.",
+      icon: <Store size={22} />,
+      title: "Choose salon",
+      text: "Compare top-rated salons and their locations.",
     },
     {
       icon: <Users size={22} />,
       title: "Select barber",
-      text: "Compare ratings, distance, pricing and available professionals.",
+      text: "Choose a professional from the salon team.",
     },
     {
       icon: <Clock size={22} />,
       title: "Pick live slot",
-      text: "Choose from generated availability without double booking.",
+      text: "Choose from available appointment times.",
     },
     {
       icon: <ShieldCheck size={22} />,
       title: "Confirm booking",
-      text: "Get a clean summary and confirm instantly.",
+      text: "Review the appointment and confirm instantly.",
     },
   ];
 
@@ -388,8 +524,8 @@ function HowItWorks() {
     <section className="mt-24">
       <SectionHeader
         eyebrow="How it works"
-        title="From search to confirmed appointment"
-        subtitle="A smoother booking journey designed for modern salons."
+        title="From salon discovery to confirmed appointment"
+        subtitle="A smoother booking journey designed around salons and their teams."
       />
 
       <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
@@ -399,12 +535,9 @@ function HowItWorks() {
             className="group rounded-[28px] border border-black/10 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-xl"
           >
             <div className="mb-5 flex items-center justify-between">
-              <div className="rounded-2xl bg-[#ff355d]/10 p-3 text-[#ff355d]">
-                {step.icon}
-              </div>
-              <span className="text-sm font-black text-neutral-300">
-                0{index + 1}
-              </span>
+              <div className="rounded-2xl bg-[#ff355d]/10 p-3 text-[#ff355d]">{step.icon}</div>
+
+              <span className="text-sm font-black text-neutral-300">0{index + 1}</span>
             </div>
 
             <h3 className="text-xl font-black">{step.title}</h3>
@@ -416,211 +549,179 @@ function HowItWorks() {
   );
 }
 
-function FeaturedBarberCard({
-  barber,
-  today,
-  currency,
-  tick,
-  selectedHairstyle,
-  recommendationId,
-}: {
-  barber: CustomerBarber;
-  today: string;
-  currency: string;
-  tick: number;
-  selectedHairstyle: string;
-  recommendationId: string;
-}) {
-  const [services, setServices] = useState<Service[]>([]);
-
-useEffect(() => {
-  async function loadServices() {
-    try {
-      const all = await getServicesFromSupabase();
-
-      setServices(
-        all.filter((s) => s.barberIds.includes(barber.id))
-      );
-    } catch (err) {
-      console.error(err);
-    }
-  }
-
-  loadServices();
-}, [barber.id]);
-
-const cheapest = useMemo(() => {
-    if (!services.length) return null;
-    return services.reduce((a, b) =>
-      Number(a.basePriceEuro) < Number(b.basePriceEuro) ? a : b
-    );
-  }, [services]);
-
-  const previewDuration = cheapest?.durationMin ?? 30;
-
-  const slots = useMemo(
-    () => generateSlotsForDate(barber.id, today, previewDuration),
-    [barber.id, today, previewDuration, tick]
-  );
-
-  const previewSlots = slots.slice(0, 3);
-
-  function buildBarberUrl() {
-    const params = new URLSearchParams();
-
-    if (selectedHairstyle) {
-      params.set("hairstyle", selectedHairstyle);
-    }
-
-    if (recommendationId) {
-      params.set("recommendationId", recommendationId);
-    }
-
-    const query = params.toString();
-
-    return `/barbers/${encodeURIComponent(barber.id)}${
-      query ? `?${query}` : ""
-    }`;
-  }
-
-  function buildBookingUrl(options?: {
-    date?: string;
-    time?: string;
-  }) {
-    const params = new URLSearchParams({
-      barberId: barber.id,
-    });
-
-    if (options?.date) {
-      params.set("date", options.date);
-    }
-
-    if (options?.time) {
-      params.set("time", options.time);
-    }
-
-    if (selectedHairstyle) {
-      params.set("hairstyle", selectedHairstyle);
-    }
-
-    if (recommendationId) {
-      params.set("recommendationId", recommendationId);
-    }
-
-    return `/book?${params.toString()}`;
-  }
-
+function FeaturedSalonCard({ salon, rank }: { salon: FeaturedSalon; rank: number }) {
   return (
-    <div className="group overflow-hidden rounded-[34px] border border-black/10 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(0,0,0,0.12)]">
-      <div className="relative h-56 overflow-hidden bg-neutral-900">
-        <img
-          src={
-            barber.imageUrl ||
-            `https://api.dicebear.com/7.x/notionists/svg?seed=${barber.name}`
-          }
-          alt={barber.name}
-          className="h-full w-full object-cover opacity-90 transition duration-500 group-hover:scale-105"
-        />
+    <article className="group overflow-hidden rounded-[34px] border border-black/10 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(0,0,0,0.12)]">
+      <div className="relative h-44 overflow-hidden bg-neutral-950 p-5 text-white">
+        <div className="absolute right-[-40px] top-[-40px] h-40 w-40 rounded-full bg-[#ff355d]/25 blur-3xl" />
 
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+        <div className="relative flex h-full flex-col justify-between">
+          <div className="flex items-start justify-between gap-3">
+            <span className="rounded-full bg-white/10 px-3 py-2 text-xs font-black backdrop-blur">
+              #{rank} Top salon
+            </span>
 
-        <div className="absolute left-4 top-4 rounded-full bg-white/90 px-3 py-2 text-xs font-black text-neutral-900 backdrop-blur">
-          {barber.area}
-        </div>
-
-        <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
-          <div>
-            <h3 className="text-2xl font-black text-white">
-              {barber.name}
-            </h3>
-
-            {barber.speciality ? (
-              <p className="mt-1 text-sm font-bold text-white/70">
-                {barber.speciality}
-              </p>
-            ) : null}
-
-            <div className="mt-2 flex items-center gap-2 text-sm text-white/70">
-              <MapPin size={14} />
-              {Number(barber.distKm ?? 0).toFixed(1)} km away
-            </div>
+            <span className="rounded-2xl bg-white px-3 py-2 text-sm font-black text-neutral-950">
+              {salon.rating > 0 ? `⭐ ${salon.rating.toFixed(1)}` : "New"}
+            </span>
           </div>
 
-          <div className="rounded-2xl bg-white/90 px-3 py-2 text-sm font-black text-neutral-950 backdrop-blur">
-            ⭐ {Number(barber.rating ?? 0).toFixed(1)}
+          <div>
+            <h3 className="text-2xl font-black">{salon.name}</h3>
+
+            <div className="mt-2 flex items-center gap-2 text-sm text-white/60">
+              <MapPin size={14} />
+              {salon.city}
+            </div>
           </div>
         </div>
       </div>
 
       <div className="p-5">
-        {barber.tagline ? (
-          <p className="line-clamp-2 text-sm font-bold leading-6 text-neutral-600">
-            {barber.tagline}
-          </p>
-        ) : (
-          <p className="text-sm text-neutral-500">
-            Premium barber experience with modern grooming services.
-          </p>
-        )}
+        <p className="line-clamp-2 text-sm font-semibold leading-6 text-neutral-500">
+          {salon.address}
+        </p>
 
-        <div className="mt-5 rounded-[24px] bg-neutral-50 p-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-neutral-400">
-            Starting from
-          </p>
-
-          <div className="mt-1 text-3xl font-black text-neutral-950">
-            {fmtMoney(cheapest?.basePriceEuro ?? 0, currency)}
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <div className="rounded-[20px] bg-neutral-50 p-4">
+            <p className="text-xs font-black uppercase tracking-wide text-neutral-400">Barbers</p>
+            <p className="mt-1 text-2xl font-black">{salon.barberCount}</p>
           </div>
 
-          <p className="mt-1 text-sm text-neutral-500">
-            {cheapest
-              ? `${cheapest.name} • ${cheapest.durationMin} min`
-              : "No service available"}
+          <div className="rounded-[20px] bg-neutral-50 p-4">
+            <p className="text-xs font-black uppercase tracking-wide text-neutral-400">Reviews</p>
+            <p className="mt-1 text-2xl font-black">{salon.reviews}</p>
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-[20px] border border-black/10 bg-white p-4">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-bold text-neutral-500">Salon rating</span>
+
+            <span className="font-black">
+              {salon.rating > 0 ? `${salon.rating.toFixed(1)} / 5` : "Not rated yet"}
+            </span>
+          </div>
+
+          <p className="mt-2 text-xs leading-5 text-neutral-400">
+            Currently calculated from review-weighted ratings of this salon&apos;s active barbers.
           </p>
         </div>
 
-        <div className="mt-5">
-          <p className="mb-3 text-xs font-bold uppercase tracking-wide text-neutral-400">
-            Available today
-          </p>
+        <Link
+          href={`/book?salonId=${encodeURIComponent(salon.id)}`}
+          className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-[#ff355d] px-5 py-3 text-sm font-black text-white shadow-lg shadow-[#ff355d]/20 transition hover:bg-[#ff1f4c]"
+        >
+          Book at this salon
+        </Link>
+      </div>
+    </article>
+  );
+}
 
-          {previewSlots.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-black/10 px-4 py-3 text-sm text-neutral-500">
-              No slots available today
+function IndependentBarberCard({ barber }: { barber: IndependentBarber }) {
+  return (
+    <article className="group overflow-hidden rounded-[34px] border border-black/10 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(0,0,0,0.12)]">
+      <div className="relative h-44 overflow-hidden bg-neutral-950 p-5 text-white">
+        <div className="absolute right-[-40px] top-[-40px] h-40 w-40 rounded-full bg-[#ff355d]/25 blur-3xl" />
+
+        <div className="relative flex h-full flex-col justify-between">
+          <div className="flex items-start justify-between gap-3">
+            <span className="rounded-full bg-[#ff355d] px-3 py-2 text-xs font-black">
+              Independent barber
+            </span>
+
+            <span className="rounded-2xl bg-white px-3 py-2 text-sm font-black text-neutral-950">
+              {barber.rating > 0 ? `⭐ ${barber.rating.toFixed(1)}` : "New"}
+            </span>
+          </div>
+
+          <div>
+            <div className="mb-3 inline-flex rounded-2xl bg-white/10 p-3 text-[#ff355d]">
+              <Scissors size={22} />
             </div>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {previewSlots.map((time) => (
-                <Link
-                  key={time}
-                  href={buildBookingUrl({
-                    date: today,
-                    time,
-                  })}
-                  className="rounded-full border border-black/10 bg-neutral-50 px-4 py-2 text-sm font-black transition hover:border-[#ff355d]/30 hover:bg-[#ff355d] hover:text-white"
-                >
-                  {time}
-                </Link>
-              ))}
+
+            <h3 className="text-2xl font-black">{barber.name}</h3>
+
+            <div className="mt-2 flex items-center gap-2 text-sm text-white/60">
+              <MapPin size={14} />
+              {barber.city}
             </div>
-          )}
+          </div>
+        </div>
+      </div>
+
+      <div className="p-5">
+        <p className="text-sm font-semibold leading-6 text-neutral-500">
+          Flexible direct appointments with an independent CUTATO professional. Ideal for customers
+          looking for a more personal or home-service grooming experience.
+        </p>
+
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <div className="rounded-[20px] bg-neutral-50 p-4">
+            <p className="text-xs font-black uppercase tracking-wide text-neutral-400">Reviews</p>
+            <p className="mt-1 text-2xl font-black">{barber.reviews}</p>
+          </div>
+
+          <div className="rounded-[20px] bg-neutral-50 p-4">
+            <p className="text-xs font-black uppercase tracking-wide text-neutral-400">Type</p>
+            <p className="mt-1 text-sm font-black">Direct booking</p>
+          </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          <Link
-            href={buildBarberUrl()}
-            className="rounded-full border border-black/10 bg-white px-4 py-3 text-center text-sm font-black transition hover:bg-neutral-50"
-          >
-            View profile
-          </Link>
+        <Link
+          href={`/book?barberId=${encodeURIComponent(barber.id)}`}
+          className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-[#ff355d] px-5 py-3 text-sm font-black text-white shadow-lg shadow-[#ff355d]/20 transition hover:bg-[#ff1f4c]"
+        >
+          View & book
+        </Link>
+      </div>
+    </article>
+  );
+}
 
-          <Link
-            href={buildBookingUrl()}
-            className="rounded-full bg-[#ff355d] px-4 py-3 text-center text-sm font-black text-white shadow-lg shadow-[#ff355d]/20 transition hover:bg-[#ff1f4c]"
-          >
-            Book now
-          </Link>
-        </div>
+function BarberSkeleton() {
+  return (
+    <div className="animate-pulse overflow-hidden rounded-[34px] border border-black/10 bg-white shadow-sm">
+      <div className="h-44 bg-neutral-200" />
+      <div className="p-5">
+        <div className="h-4 w-3/4 rounded bg-neutral-200" />
+        <div className="mt-4 h-20 rounded-[20px] bg-neutral-100" />
+        <div className="mt-4 h-12 rounded-full bg-neutral-100" />
+      </div>
+    </div>
+  );
+}
+
+function SalonSkeleton() {
+  return (
+    <div className="animate-pulse overflow-hidden rounded-[34px] border border-black/10 bg-white shadow-sm">
+      <div className="h-44 bg-neutral-200" />
+      <div className="p-5">
+        <div className="h-4 w-3/4 rounded bg-neutral-200" />
+        <div className="mt-4 h-20 rounded-[20px] bg-neutral-100" />
+        <div className="mt-4 h-12 rounded-full bg-neutral-100" />
+      </div>
+    </div>
+  );
+}
+
+function HeroFeature({
+  icon,
+  title,
+  text,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  text: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-3xl border border-black/10 bg-neutral-50 p-4">
+      <div className="rounded-2xl bg-[#ff355d]/10 p-3 text-[#ff355d]">{icon}</div>
+
+      <div>
+        <p className="text-sm font-black">{title}</p>
+        <p className="mt-1 text-xs leading-5 text-neutral-500">{text}</p>
       </div>
     </div>
   );
@@ -698,8 +799,7 @@ function FinalCTA() {
         </h2>
 
         <p className="mx-auto mt-5 max-w-2xl text-white/60">
-          Explore barbers, compare services, preview live availability and lock
-          your appointment in a few clicks.
+          Explore top salons, discover their barbers and book your appointment in a few clicks.
         </p>
 
         <div className="mt-8 flex flex-wrap justify-center gap-3">
@@ -712,10 +812,10 @@ function FinalCTA() {
           </Link>
 
           <Link
-            href="#featured-barbers"
+            href="#featured-salons"
             className="rounded-full bg-[#ff355d] px-6 py-4 text-sm font-black text-white transition hover:bg-[#ff1f4c]"
           >
-            Explore barbers
+            Explore salons
           </Link>
 
           <Link
@@ -727,49 +827,6 @@ function FinalCTA() {
         </div>
       </div>
     </section>
-  );
-}
-
-function HeroSlot({
-  time,
-  name,
-  price,
-  quiet,
-  busy,
-}: {
-  time: string;
-  name: string;
-  price: string;
-  quiet?: boolean;
-  busy?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between rounded-3xl border border-black/10 bg-white p-4">
-      <div>
-        <p className="text-sm font-black">{time}</p>
-        <p className="text-xs text-neutral-500">{name}</p>
-      </div>
-
-      <div className="text-right">
-        <p className="text-sm font-black">{price}</p>
-        <p
-          className={`text-xs font-bold ${
-            busy ? "text-[#ff355d]" : quiet ? "text-emerald-600" : "text-neutral-400"
-          }`}
-        >
-          {busy ? "Busy" : quiet ? "Quiet" : "Normal"}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function MiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-3xl border border-black/10 bg-neutral-50 p-4">
-      <p className="text-xs font-bold text-neutral-500">{label}</p>
-      <p className="mt-1 truncate text-sm font-black">{value}</p>
-    </div>
   );
 }
 
@@ -793,15 +850,13 @@ function SectionHeader({
 }) {
   return (
     <div>
-      <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">
-        {eyebrow}
-      </p>
+      <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">{eyebrow}</p>
+
       <h2 className="mt-3 max-w-3xl text-4xl font-black tracking-[-0.04em] text-neutral-950 md:text-5xl">
         {title}
       </h2>
-      <p className="mt-4 max-w-2xl text-base leading-7 text-neutral-500">
-        {subtitle}
-      </p>
+
+      <p className="mt-4 max-w-2xl text-base leading-7 text-neutral-500">{subtitle}</p>
     </div>
   );
 }

@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import WebShell from "@/app/Components/WebShell";
-import { requireSalonAuth } from "@/app/portal/_lib/portalAuth";
+import PortalShell from "@/app/Components/portal/PortalShell";
+import RoleGate from "@/app/Components/portal/RoleGate";
+import type { AuthUser } from "@/app/Components/auth";
 import type { CustomerBarber as Barber } from "@/app/lib/barbersStore";
 import {
   deleteBarberFromSupabase,
@@ -11,25 +12,22 @@ import {
   upsertBarberToSupabase,
   type SupabaseBarber,
 } from "@/app/lib/barbersSupabase";
+import { toast } from "@/app/lib/toast";
 
 function uid() {
   return crypto.randomUUID();
 }
 
 export default function SalonStaffPage() {
-  const auth = requireSalonAuth();
+  return (
+    <RoleGate role="salon" title="Staff">
+      {(user) => <SalonStaffContent user={user} />}
+    </RoleGate>
+  );
+}
 
-  if (!auth.ok) {
-    return (
-      <WebShell title="Access denied" subtitle="Salon account required.">
-        <div className="mx-auto max-w-4xl rounded-[28px] border border-black/10 bg-white p-8">
-          This page is only available for salon accounts.
-        </div>
-      </WebShell>
-    );
-  }
-
-  const salonId = auth.user.salonId ?? "";
+function SalonStaffContent({ user }: { user: AuthUser }) {
+  const salonId = user.salonId ?? "";
 
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,7 +73,7 @@ export default function SalonStaffPage() {
       );
     } catch (error) {
       console.error("Failed to load salon barbers:", error);
-      alert("Could not load this salon's staff.");
+      toast.error("Could not load this salon's staff.");
       setBarbers([]);
     } finally {
       setLoading(false);
@@ -131,18 +129,16 @@ export default function SalonStaffPage() {
 
   async function saveBarber() {
     if (!salonId) {
-      alert("Your account is not linked to a salon.");
+      toast.error("Your account is not linked to a salon.");
       return;
     }
 
     if (!name.trim() || !area.trim() || !address.trim()) {
-      alert("Name, area and address are required.");
+      toast.error("Name, area and address are required.");
       return;
     }
 
-    const current = editingId
-      ? barbers.find((barber) => barber.id === editingId)
-      : null;
+    const current = editingId ? barbers.find((barber) => barber.id === editingId) : null;
 
     const payload: SupabaseBarber = {
       id: editingId ?? uid(),
@@ -167,7 +163,7 @@ export default function SalonStaffPage() {
       await loadBarbers();
     } catch (error) {
       console.error("Failed to save barber:", error);
-      alert("Failed to save barber.");
+      toast.error("Failed to save barber.");
     }
   }
 
@@ -179,14 +175,15 @@ export default function SalonStaffPage() {
       await loadBarbers();
     } catch (error) {
       console.error("Failed to delete barber:", error);
-      alert(
+      toast.error(
         "Failed to delete barber. If this barber has bookings/services, remove those links first."
       );
     }
   }
 
   return (
-    <WebShell
+    <PortalShell
+      role="salon"
       title="Salon Staff"
       subtitle="Only barbers assigned to this salon are shown here."
     >
@@ -195,12 +192,8 @@ export default function SalonStaffPage() {
 
         <div className="mt-8 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">
-              Staff
-            </p>
-            <h1 className="mt-2 text-4xl font-black tracking-[-0.04em]">
-              Your salon team
-            </h1>
+            <p className="text-sm font-black uppercase tracking-[0.2em] text-[#ff355d]">Staff</p>
+            <h1 className="mt-2 text-4xl font-black tracking-[-0.04em]">Your salon team</h1>
             <p className="mt-2 text-neutral-500">
               {loading ? "Loading…" : `${barbers.length} barber(s) assigned to this salon.`}
             </p>
@@ -228,9 +221,7 @@ export default function SalonStaffPage() {
           {!loading && filtered.length === 0 ? (
             <div className="rounded-[28px] border border-dashed border-black/10 bg-white p-10 text-center">
               <h2 className="text-xl font-black">No barbers yet</h2>
-              <p className="mt-2 text-sm text-neutral-500">
-                Add the first barber for this salon.
-              </p>
+              <p className="mt-2 text-sm text-neutral-500">Add the first barber for this salon.</p>
             </div>
           ) : (
             filtered.map((barber) => (
@@ -271,9 +262,7 @@ export default function SalonStaffPage() {
           <div className="w-full max-w-2xl rounded-[32px] bg-white p-7 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-3xl font-black">
-                  {editingId ? "Edit barber" : "Add barber"}
-                </h2>
+                <h2 className="text-3xl font-black">{editingId ? "Edit barber" : "Add barber"}</h2>
                 <p className="mt-2 text-sm text-neutral-500">
                   This barber will automatically belong to the logged-in salon.
                 </p>
@@ -326,18 +315,28 @@ export default function SalonStaffPage() {
           </div>
         </div>
       ) : null}
-    </WebShell>
+    </PortalShell>
   );
 }
 
 function PortalNav() {
   return (
     <div className="flex flex-wrap gap-2">
-      <Link href="/portal/salon" className="btn btn-secondary">← Dashboard</Link>
-      <Link href="/portal/salon/bookings" className="btn btn-secondary">Bookings</Link>
-      <Link href="/portal/salon/services" className="btn btn-secondary">Services</Link>
-      <Link href="/portal/salon/availability" className="btn btn-secondary">Availability</Link>
-      <Link href="/portal/salon/settings" className="btn btn-secondary">Settings</Link>
+      <Link href="/portal/salon" className="btn btn-secondary">
+        ← Dashboard
+      </Link>
+      <Link href="/portal/salon/bookings" className="btn btn-secondary">
+        Bookings
+      </Link>
+      <Link href="/portal/salon/services" className="btn btn-secondary">
+        Services
+      </Link>
+      <Link href="/portal/salon/availability" className="btn btn-secondary">
+        Availability
+      </Link>
+      <Link href="/portal/salon/settings" className="btn btn-secondary">
+        Settings
+      </Link>
     </div>
   );
 }

@@ -80,7 +80,14 @@ export function mapSupabaseBooking(row: SupabaseBooking): Booking {
   };
 }
 
-export function mapBookingToSupabase(b: Booking) {
+type BookingWithOwnership = Booking & {
+  paymentStatus?: string;
+  userId?: string;
+  customerId?: string;
+  salonId?: string;
+};
+
+export function mapBookingToSupabase(b: BookingWithOwnership) {
   return {
     id: b.id,
     created_at: b.createdAt,
@@ -104,12 +111,12 @@ export function mapBookingToSupabase(b: Booking) {
     total_euro: Number(b.totalEuro || 0),
 
     payment_method: b.paymentMethod || "salon",
-    payment_status: (b as any).paymentStatus || "unpaid",
+    payment_status: b.paymentStatus || "unpaid",
 
     user_email: b.userEmail,
-    user_id: (b as any).userId || null,
-    customer_id: (b as any).customerId || null,
-    salon_id: (b as any).salonId || null,
+    user_id: b.userId || null,
+    customer_id: b.customerId || null,
+    salon_id: b.salonId || null,
 
     status: b.status || "pending",
     assigned_barber_id: b.assignedBarberId || b.barberId,
@@ -133,9 +140,7 @@ export async function createBookingInSupabase(b: Booking): Promise<Booking> {
     console.error("BOOKING PAYLOAD:", payload);
 
     throw new Error(
-      `${error.message || "Supabase insert failed"} ${
-        error.details ? `- ${error.details}` : ""
-      }`
+      `${error.message || "Supabase insert failed"} ${error.details ? `- ${error.details}` : ""}`
     );
   }
 
@@ -155,13 +160,13 @@ export async function getBookingsForUser(email: string): Promise<Booking[]> {
   return ((data ?? []) as SupabaseBooking[]).map(mapSupabaseBooking);
 }
 
-export async function getBookingsForBarber(
-  barberId: string
-): Promise<Booking[]> {
+export async function getBookingsForBarber(barberId: string): Promise<Booking[]> {
   const { data, error } = await supabase
     .from("bookings")
     .select("*")
-    .or(`barber_id.eq.${barberId},assigned_barber_id.eq.${barberId}`)
+    .or(
+      `barber_id.eq.${barberId.replace(/[^\w-]/g, "")},assigned_barber_id.eq.${barberId.replace(/[^\w-]/g, "")}`
+    )
     .order("date", { ascending: true })
     .order("time", { ascending: true });
 
@@ -186,9 +191,7 @@ export async function getAllBookingsFromSupabase(): Promise<Booking[]> {
   return ((data ?? []) as SupabaseBooking[]).map(mapSupabaseBooking);
 }
 
-export async function getSalonBookingsFromSupabase(
-  salonId: string
-): Promise<Booking[]> {
+export async function getSalonBookingsFromSupabase(salonId: string): Promise<Booking[]> {
   const { data, error } = await supabase
     .from("bookings")
     .select("*")
@@ -218,14 +221,8 @@ export async function getBookingsFromSupabase(): Promise<Booking[]> {
   return ((data ?? []) as SupabaseBooking[]).map(mapSupabaseBooking);
 }
 
-export async function getBookingByIdFromSupabase(
-  id: string
-): Promise<Booking | null> {
-  const { data, error } = await supabase
-    .from("bookings")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
+export async function getBookingByIdFromSupabase(id: string): Promise<Booking | null> {
+  const { data, error } = await supabase.from("bookings").select("*").eq("id", id).maybeSingle();
 
   if (error) throw error;
 
@@ -236,7 +233,7 @@ export async function updateBookingStatusInSupabase(
   id: string,
   status: BookingStatus
 ): Promise<void> {
-  const patch: any = { status };
+  const patch: Record<string, string> = { status };
 
   if (status === "completed") {
     patch.completed_at = new Date().toISOString();
@@ -246,10 +243,7 @@ export async function updateBookingStatusInSupabase(
     patch.cancelled_at = new Date().toISOString();
   }
 
-  const { error } = await supabase
-    .from("bookings")
-    .update(patch)
-    .eq("id", id);
+  const { error } = await supabase.from("bookings").update(patch).eq("id", id);
 
   if (error) throw error;
 }
