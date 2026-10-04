@@ -136,17 +136,68 @@ create table if not exists public.applications (
 );
 
 -- ---------------------------------------------------------------------------
+-- Compatibility with databases created before this file existed.
+-- Only adds defaults, widens types and adds keys; never deletes data.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  col record;
+begin
+  -- Timestamps that are required but have no default would make inserts fail.
+  for col in
+    select c.table_name, c.column_name
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.column_name in ('created_at', 'updated_at')
+      and c.is_nullable = 'NO'
+      and c.column_default is null
+      and c.table_name in ('salons', 'barbers', 'profiles', 'services', 'bookings',
+                           'barber_working_hours', 'applications')
+  loop
+    execute format('alter table public.%I alter column %I set default now()', col.table_name, col.column_name);
+  end loop;
+
+  -- Prices can have cents.
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'services'
+      and column_name = 'base_price_euro' and data_type = 'integer'
+  ) then
+    alter table public.services alter column base_price_euro type numeric;
+  end if;
+
+  -- Generated UUID primary keys need a default (server inserts omit the id).
+  for col in
+    select c.table_name
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.column_name = 'id'
+      and c.data_type = 'uuid'
+      and c.column_default is null
+      and c.table_name in ('salons', 'barber_working_hours', 'applications')
+  loop
+    execute format('alter table public.%I alter column id set default gen_random_uuid()', col.table_name);
+  end loop;
+end;
+$$;
+
+-- The availability API upserts on (barber_id, day_of_week).
+create unique index if not exists barber_working_hours_barber_day_key
+  on public.barber_working_hours (barber_id, day_of_week);
+
+-- ---------------------------------------------------------------------------
 -- Helpers (security definer so policies can read profiles without recursion)
 -- ---------------------------------------------------------------------------
 
 create or replace function public.current_salon_id() returns text
 language sql stable security definer set search_path = public as $$
-  select salon_id from public.profiles where id = auth.uid() and role = 'salon'
+  select salon_id::text from public.profiles where id = auth.uid() and role = 'salon'
 $$;
 
 create or replace function public.current_barber_id() returns text
 language sql stable security definer set search_path = public as $$
-  select barber_id from public.profiles where id = auth.uid() and role = 'barber'
+  select barber_id::text from public.profiles where id = auth.uid() and role = 'barber'
 $$;
 
 -- Create a customer profile for every new auth user.
@@ -226,13 +277,55 @@ alter table public.bookings enable row level security;
 alter table public.barber_working_hours enable row level security;
 alter table public.applications enable row level security;
 
+-- Remove policies that are not defined in this file (for example permissive
+-- "allow all" policies from earlier setups). Postgres combines policies with OR,
+-- so any leftover permissive policy would silently override the rules below.
+do $$
+declare
+  pol record;
+begin
+  for pol in
+    select tablename, policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename in ('salons', 'barbers', 'profiles', 'services', 'bookings',
+                        'barber_working_hours', 'applications')
+      and policyname not in (
+        'salons are public', 'owners update their salon',
+        'barbers are public', 'salon owners add barbers',
+        'salon owners or barber update barber', 'salon owners remove barbers',
+        'read own or team profiles', 'create own customer profile', 'update own profile',
+        'services are public', 'barber or salon manages services',
+        'customers create own bookings', 'parties read bookings', 'parties update bookings',
+        'working hours are public'
+      )
+  loop
+    execute format('drop policy %I on public.%I', pol.policyname, pol.tablename);
+  end loop;
+end;
+$$;
+
+-- Lock down legacy tables the app no longer uses (RLS on, no policies = no
+-- browser access). The data stays; the dashboard and server still see it.
+do $$
+declare
+  t text;
+begin
+  foreach t in array array['barber_avability', 'salon_settings', 'service_barbers'] loop
+    if to_regclass('public.' || t) is not null then
+      execute format('alter table public.%I enable row level security', t);
+    end if;
+  end loop;
+end;
+$$;
+
 -- Salons: public directory; owners edit their own salon.
 drop policy if exists "salons are public" on public.salons;
 create policy "salons are public" on public.salons for select using (true);
 
 drop policy if exists "owners update their salon" on public.salons;
 create policy "owners update their salon" on public.salons for update
-  using (id = public.current_salon_id()) with check (id = public.current_salon_id());
+  using (id::text = public.current_salon_id()) with check (id::text = public.current_salon_id());
 
 -- Barbers: public directory; salon owners manage their team; barbers edit themselves.
 drop policy if exists "barbers are public" on public.barbers;
@@ -240,22 +333,22 @@ create policy "barbers are public" on public.barbers for select using (true);
 
 drop policy if exists "salon owners add barbers" on public.barbers;
 create policy "salon owners add barbers" on public.barbers for insert
-  with check (salon_id is not null and salon_id = public.current_salon_id());
+  with check (salon_id is not null and salon_id::text = public.current_salon_id());
 
 drop policy if exists "salon owners or barber update barber" on public.barbers;
 create policy "salon owners or barber update barber" on public.barbers for update
-  using (salon_id = public.current_salon_id() or id = public.current_barber_id())
-  with check (salon_id = public.current_salon_id() or id = public.current_barber_id());
+  using (salon_id::text = public.current_salon_id() or id = public.current_barber_id())
+  with check (salon_id::text = public.current_salon_id() or id = public.current_barber_id());
 
 drop policy if exists "salon owners remove barbers" on public.barbers;
 create policy "salon owners remove barbers" on public.barbers for delete
-  using (salon_id = public.current_salon_id());
+  using (salon_id::text = public.current_salon_id());
 
 -- Profiles: users see their own; salon owners see their team. Users can only
 -- create or keep a plain customer profile; roles are granted by the server.
 drop policy if exists "read own or team profiles" on public.profiles;
 create policy "read own or team profiles" on public.profiles for select
-  using (id = auth.uid() or (salon_id is not null and salon_id = public.current_salon_id()));
+  using (id = auth.uid() or (salon_id is not null and salon_id::text = public.current_salon_id()));
 
 drop policy if exists "create own customer profile" on public.profiles;
 create policy "create own customer profile" on public.profiles for insert
@@ -273,11 +366,11 @@ drop policy if exists "barber or salon manages services" on public.services;
 create policy "barber or salon manages services" on public.services for all
   using (
     barber_id = public.current_barber_id()
-    or barber_id in (select b.id from public.barbers b where b.salon_id = public.current_salon_id())
+    or barber_id in (select b.id from public.barbers b where b.salon_id::text = public.current_salon_id())
   )
   with check (
     barber_id = public.current_barber_id()
-    or barber_id in (select b.id from public.barbers b where b.salon_id = public.current_salon_id())
+    or barber_id in (select b.id from public.barbers b where b.salon_id::text = public.current_salon_id())
   );
 
 -- Bookings: customers create and see their own; barbers and salons see theirs.
@@ -291,7 +384,7 @@ create policy "parties read bookings" on public.bookings for select
     user_id = auth.uid()
     or barber_id = public.current_barber_id()
     or assigned_barber_id = public.current_barber_id()
-    or salon_id = public.current_salon_id()
+    or salon_id::text = public.current_salon_id()
   );
 
 drop policy if exists "parties update bookings" on public.bookings;
@@ -300,7 +393,7 @@ create policy "parties update bookings" on public.bookings for update
     user_id = auth.uid()
     or barber_id = public.current_barber_id()
     or assigned_barber_id = public.current_barber_id()
-    or salon_id = public.current_salon_id()
+    or salon_id::text = public.current_salon_id()
   );
 
 -- Working hours: public (needed to compute free slots); writes go through the server.

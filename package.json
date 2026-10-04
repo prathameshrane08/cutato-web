@@ -10,7 +10,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "test:db": "node supabase/tests/policies.test.mjs"
+    "test:db": "node supabase/tests/policies.test.mjs && node supabase/tests/policies.test.mjs legacy"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.0",
